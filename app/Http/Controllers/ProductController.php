@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Brand;
 use App\Models\ProductCreateErrorLog;
 use App\Models\ProductImage;
+use App\Models\Shops;
 use App\Models\Upload;
 use Illuminate\Http\Request;
 use Illuminate\Database\QueryException;
@@ -131,6 +132,62 @@ class ProductController extends Controller
         }
 
         return filter_var($data[$key], FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function resolveActiveStoreIdFromSlug(Request $request): ?int
+    {
+        if (!$request->filled('store_slug')) {
+            return null;
+        }
+
+        $store = Shops::where('slug', $request->query('store_slug'))
+            ->where('status', 'active')
+            ->first();
+
+        return $store ? (int) $store->id : 0;
+    }
+
+    private function applyStoreSlugFilter($query, Request $request)
+    {
+        $storeId = $this->resolveActiveStoreIdFromSlug($request);
+
+        if ($storeId !== null) {
+            $query->where('shop_id', $storeId);
+        }
+
+        return $query;
+    }
+
+    private function applyPublicProductVisibility($query)
+    {
+        $query->where('approved', 1);
+
+        if (Schema::hasColumn('products', 'published')) {
+            $query->where('published', 1);
+        }
+
+        return $query;
+    }
+
+    private function addStorefrontProductFields($products)
+    {
+        $decorate = function ($product) {
+            $product->price = $product->unit_price;
+            $product->sale_price = $this->getFinalSalePrice($product);
+            $product->final_sale_price = $product->sale_price;
+            $product->primary_image = $product->relationLoaded('primaryImage') ? $product->primaryImage : null;
+            $product->stock = $product->current_stock;
+            $product->store_id = $product->shop_id;
+
+            return $product;
+        };
+
+        if (method_exists($products, 'getCollection')) {
+            $products->setCollection($products->getCollection()->map($decorate));
+            return $products;
+        }
+
+        return $products->map($decorate);
     }
 
     private function normalizeProductPhotos($photos): array
@@ -662,6 +719,8 @@ class ProductController extends Controller
                 $query->where('shop_id', $request->shop_id);
             }
 
+            $this->applyStoreSlugFilter($query, $request);
+
             if ($request->filled('user_id')) {
                 $query->where('user_id', $request->user_id);
             }
@@ -683,11 +742,11 @@ class ProductController extends Controller
                 $query->where('brand_id', $request->brand_id);
             }
 
-            if ($request->filled('status')) {
+            if ($request->filled('status') && Schema::hasColumn('products', 'status')) {
                 $query->where('status', $request->status);
             }
 
-            if ($request->filled('is_active')) {
+            if ($request->filled('is_active') && Schema::hasColumn('products', 'is_active')) {
                 $query->where('is_active', (int) $request->is_active);
             }
 
@@ -716,7 +775,8 @@ class ProductController extends Controller
             }
 
             $perPage = (int) $request->get('per_page', 24);
-            $products = $query->where('approved', 1)->latest()->paginate($perPage);
+            $products = $this->applyPublicProductVisibility($query)->latest()->paginate($perPage);
+            $products = $this->addStorefrontProductFields($products);
 
             return $this->success('Products fetched successfully', $products, 200,);
         } catch (\Throwable $e) {
@@ -818,7 +878,7 @@ class ProductController extends Controller
                 $query->where('status', $request->status);
             }
 
-            if ($request->filled('is_active')) {
+            if ($request->filled('is_active') && Schema::hasColumn('products', 'is_active')) {
                 $query->where('is_active', (int) $request->is_active);
             }
 
@@ -899,7 +959,7 @@ class ProductController extends Controller
                 $query->where('status', $request->status);
             }
 
-            if ($request->filled('is_active')) {
+            if ($request->filled('is_active') && Schema::hasColumn('products', 'is_active')) {
                 $query->where('is_active', (int) $request->is_active);
             }
 
@@ -949,13 +1009,15 @@ class ProductController extends Controller
                 'shop'
             ]);
 
+            $this->applyStoreSlugFilter($query, $request);
+
 
 
             if ($request->filled('featured')) {
                 $query->where('featured', $request->featured);
             }
 
-            if ($request->filled('is_active')) {
+            if ($request->filled('is_active') && Schema::hasColumn('products', 'is_active')) {
                 $query->where('is_active', (int) $request->is_active);
             }
 
@@ -984,7 +1046,8 @@ class ProductController extends Controller
             }
 
             $perPage = (int) $request->get('per_page', 20);
-            $products = $query->where('approved', 1)->latest()->paginate($perPage);
+            $products = $this->applyPublicProductVisibility($query)->latest()->paginate($perPage);
+            $products = $this->addStorefrontProductFields($products);
 
             return $this->success('Products fetched successfully', $products, 200,);
         } catch (\Throwable $e) {
@@ -995,6 +1058,8 @@ class ProductController extends Controller
     {
         try {
             $query = Product::query()->fromActiveShop()->with(['primaryImage', 'images', 'category', 'subCategory', 'brand', 'productDiscount', 'averageReview']);
+
+            $this->applyStoreSlugFilter($query, $request);
 
             if ($request->filled('category_id')) {
                 $categoryId = (int) $request->category_id;
@@ -1012,7 +1077,7 @@ class ProductController extends Controller
                 $query->where('featured', $request->featured);
             }
 
-            if ($request->filled('is_active')) {
+            if ($request->filled('is_active') && Schema::hasColumn('products', 'is_active')) {
                 $query->where('is_active', (int) $request->is_active);
             }
 
@@ -1041,7 +1106,8 @@ class ProductController extends Controller
             }
 
             $perPage = (int) $request->get('per_page', 20);
-            $products = $query->where('approved', 1)->latest()->paginate($perPage);
+            $products = $this->applyPublicProductVisibility($query)->latest()->paginate($perPage);
+            $products = $this->addStorefrontProductFields($products);
 
             return $this->success('Products fetched successfully', $products, 200,);
         } catch (\Throwable $e) {
@@ -1053,13 +1119,15 @@ class ProductController extends Controller
         try {
             $query = Product::query()->fromActiveShop()->with(['primaryImage', 'images', 'category', 'subCategory', 'brand', 'productDiscount', 'averageReview', 'shop']);
 
+            $this->applyStoreSlugFilter($query, $request);
+
 
 
             if ($request->filled('todays_deal')) {
                 $query->where('todays_deal', $request->todays_deal);
             }
 
-            if ($request->filled('is_active')) {
+            if ($request->filled('is_active') && Schema::hasColumn('products', 'is_active')) {
                 $query->where('is_active', (int) $request->is_active);
             }
 
@@ -1088,7 +1156,8 @@ class ProductController extends Controller
             }
 
             $perPage = (int) $request->get('per_page', 20);
-            $products = $query->where('approved', 1)->latest()->paginate($perPage);
+            $products = $this->applyPublicProductVisibility($query)->latest()->paginate($perPage);
+            $products = $this->addStorefrontProductFields($products);
 
             return $this->success('Products fetched successfully', $products, 200,);
         } catch (\Throwable $e) {

@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\Product;
+use App\Models\Shops;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -39,6 +42,38 @@ class CategoryController extends Controller
         }
 
         return $slug;
+    }
+
+    private function resolveActiveStoreIdFromSlug(Request $request): ?int
+    {
+        if (!$request->filled('store_slug')) {
+            return null;
+        }
+
+        $store = Shops::where('slug', $request->query('store_slug'))
+            ->where('status', 'active')
+            ->first();
+
+        return $store ? (int) $store->id : 0;
+    }
+
+    private function visibleCategoryIdsForStore(int $storeId)
+    {
+        $productQuery = Product::query()
+            ->fromActiveShop()
+            ->where('shop_id', $storeId)
+            ->where('approved', 1);
+
+        if (Schema::hasColumn('products', 'published')) {
+            $productQuery->where('published', 1);
+        }
+
+        $categoryIds = $productQuery->pluck('category_id')->filter()->unique()->values();
+        $parentIds = Category::whereIn('id', $categoryIds)
+            ->pluck('parent_id')
+            ->filter(fn ($parentId) => (int) $parentId > 0);
+
+        return $categoryIds->merge($parentIds)->unique()->values();
     }
 
     /**
@@ -130,6 +165,11 @@ class CategoryController extends Controller
                 ->where('parent_id', 0)
                 ->where('is_active', 1)
                 ->where('featured', 1);
+
+            $storeId = $this->resolveActiveStoreIdFromSlug($request);
+            if ($storeId !== null) {
+                $query->whereIn('id', $this->visibleCategoryIdsForStore($storeId));
+            }
 
             $perPage = (int) $request->get('per_page', 20);
 

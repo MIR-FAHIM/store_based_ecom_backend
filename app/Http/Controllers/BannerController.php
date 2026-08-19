@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Banner;
+use App\Models\Shops;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Schema;
 
 class BannerController extends Controller
 
@@ -43,6 +45,7 @@ class BannerController extends Controller
                 'title' => ['nullable', 'string', 'max:255'],
                 'related_product_id' => ['nullable', 'integer', 'exists:products,id'],
                 'related_category_id' => ['nullable', 'integer', 'exists:categories,id'],
+                'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
                 // Use an existing uploaded image by `image_id` (no file upload here)
                 'image_id' => ['required_without:image_path', 'nullable', 'integer', 'exists:uploads,id'],
                 'image_path' => ['nullable', 'string', 'max:255'],
@@ -54,6 +57,7 @@ class BannerController extends Controller
                 'title' => $validated['title'] ?? null,
                 'related_product_id' => $validated['related_product_id'] ?? null,
                 'related_category_id' => $validated['related_category_id'] ?? null,
+                'shop_id' => $validated['shop_id'] ?? null,
                 'image_path' => $validated['image_path'] ?? null,
                 'image_id' => $validated['image_id'] ?? null,
                 'note' => $validated['note'] ?? null,
@@ -71,13 +75,54 @@ class BannerController extends Controller
     /**
      * GET /banners/active
      */
-    public function getActiveBanner()
+    public function getActiveBanner(Request $request)
     {
         try {
-            $banners = Banner::where('is_active', 1)
-                ->with(['image'])
+            $query = Banner::where('is_active', 1)
+                ->with(['image', 'product', 'category', 'shop']);
+
+            if ($request->filled('store_slug')) {
+                $store = Shops::where('slug', $request->query('store_slug'))
+                    ->where('status', 'active')
+                    ->first();
+
+                if (!$store) {
+                    return $this->success('Active banners fetched', []);
+                }
+
+                $query->where(function ($bannerQuery) use ($store) {
+                    if (Schema::hasColumn('banners', 'shop_id')) {
+                        $bannerQuery->where('shop_id', $store->id)
+                            ->orWhereHas('product', function ($productQuery) use ($store) {
+                                $productQuery->where('shop_id', $store->id)
+                                    ->where('approved', 1);
+
+                                if (Schema::hasColumn('products', 'published')) {
+                                    $productQuery->where('published', 1);
+                                }
+                            });
+                    } else {
+                        $bannerQuery->whereHas('product', function ($productQuery) use ($store) {
+                            $productQuery->where('shop_id', $store->id)
+                                ->where('approved', 1);
+
+                            if (Schema::hasColumn('products', 'published')) {
+                                $productQuery->where('published', 1);
+                            }
+                        });
+                    }
+                });
+            }
+
+            $banners = $query
                 ->latest()
-                ->get();
+                ->get()
+                ->map(function ($banner) {
+                    $banner->store_id = $banner->shop_id;
+                    $banner->image = $banner->relationLoaded('image') ? $banner->image : null;
+
+                    return $banner;
+                });
 
             return $this->success('Active banners fetched', $banners);
         } catch (\Throwable $e) {
@@ -118,6 +163,7 @@ class BannerController extends Controller
                 'title' => ['nullable', 'string', 'max:255'],
                 'related_product_id' => ['nullable', 'integer', 'exists:products,id'],
                 'related_category_id' => ['nullable', 'integer', 'exists:categories,id'],
+                'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
                 'image_id' => ['nullable', 'integer', 'exists:uploads,id'],
                 'image_path' => ['nullable', 'string', 'max:255'],
                 'note' => ['nullable', 'string'],

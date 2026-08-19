@@ -19,5 +19,5 @@ ALTER TABLE notifications DROP COLUMN sent_to; // remove a column
 DB_PASSWORD=mir0188_2024
 
 
-git remote set-url origin https://ghp_nMWUnxEzLrxO5A6bgdeI5QXFkr8ekrE0xYKDa@github.com/MIR-FAHIM/store_based_ecom_backend.git
+git remote set-url origin https://github.com/MIR-FAHIM/store_based_ecom_backend.git
 

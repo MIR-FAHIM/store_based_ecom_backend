@@ -19,6 +19,7 @@ class Banner extends Model
         'title',
         'related_product_id',
         'related_category_id',
+        'shop_id',
         'image_path',
         'image_id',
         'note',
@@ -44,6 +45,11 @@ class Banner extends Model
     public function image()
     {
         return $this->belongsTo(Upload::class, 'image_id');
+    }
+
+    public function shop()
+    {
+        return $this->belongsTo(Shops::class, 'shop_id');
     }
 
     public function category()
