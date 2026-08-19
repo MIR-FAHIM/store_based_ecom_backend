@@ -78,9 +78,10 @@ class CategoryController extends Controller
                     'parent_id' => (int) ($category->parent_id ?? 0) > 0 ? (int) $category->parent_id : null,
                     'name' => $category->name,
                     'slug' => $category->slug,
+                    'banner' => $category->banner,
                     'icon' => $category->iconImage,
                     'cover_image' => $category->coverImage,
-                    'banner' => $category->banner,
+                   
                     'children' => $this->publicStoreCategoryTree($categories, $visibleCategoryIds, (int) $category->id),
                 ];
             });
@@ -186,7 +187,7 @@ class CategoryController extends Controller
                 $visibleCategoryIds = $this->activeStoreCategoryIds($storeId);
 
                 return $this->success(
-                    'Categories fetched successfully',
+                    'Store Categories fetched successfully',
                     $this->publicStoreCategoryTree($categories, $visibleCategoryIds)
                 );
             }
