@@ -7,6 +7,7 @@ use App\Models\Brand;
 use App\Models\ProductCreateErrorLog;
 use App\Models\ProductImage;
 use App\Models\Shops;
+use App\Models\StoreCategory;
 use App\Models\Upload;
 use Illuminate\Http\Request;
 use Illuminate\Database\QueryException;
@@ -153,9 +154,21 @@ class ProductController extends Controller
 
         if ($storeId !== null) {
             $query->where('shop_id', $storeId);
+            $query->whereHas('category.storeCategories', function ($storeCategoryQuery) use ($storeId) {
+                $storeCategoryQuery->where('store_id', $storeId)
+                    ->where('is_active', true);
+            });
         }
 
         return $query;
+    }
+
+    private function isCategoryActiveForStore(int $storeId, int $categoryId): bool
+    {
+        return StoreCategory::where('store_id', $storeId)
+            ->where('category_id', $categoryId)
+            ->where('is_active', true)
+            ->exists();
     }
 
     private function applyPublicProductVisibility($query)
@@ -353,6 +366,13 @@ class ProductController extends Controller
                 'weight.numeric' => 'Weight must be a valid number.',
                 'weight.min' => 'Weight cannot be negative.',
             ]);
+
+            if (!$this->isCategoryActiveForStore((int) $validated['shop_id'], (int) $validated['category_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'This category is not active for your store.',
+                ], 422);
+            }
 
             // Normalize photos: accept array of ids or comma string
             $photos = null;
@@ -1373,6 +1393,18 @@ class ProductController extends Controller
                 'brand_id.exists' => 'Selected brand does not exist.',
                 'shop_id.exists' => 'Selected shop does not exist.',
             ]);
+
+            if (array_key_exists('shop_id', $validated) || array_key_exists('category_id', $validated)) {
+                $storeIdForCategoryCheck = (int) ($validated['shop_id'] ?? $product->shop_id);
+                $categoryIdForCheck = (int) ($validated['category_id'] ?? $product->category_id);
+
+                if ($storeIdForCategoryCheck && $categoryIdForCheck && !$this->isCategoryActiveForStore($storeIdForCategoryCheck, $categoryIdForCheck)) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'This category is not active for your store.',
+                    ], 422);
+                }
+            }
 
             if (array_key_exists('photos', $validated) && is_array($validated['photos'])) {
                 $validated['photos'] = implode(',', $validated['photos']);

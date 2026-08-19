@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Shops;
+use App\Models\StoreCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -57,23 +58,80 @@ class CategoryController extends Controller
         return $store ? (int) $store->id : 0;
     }
 
-    private function visibleCategoryIdsForStore(int $storeId)
+    private function activeStoreCategoryIds(int $storeId)
     {
+        return StoreCategory::where('store_id', $storeId)
+            ->where('is_active', true)
+            ->pluck('category_id')
+            ->map(fn ($categoryId) => (int) $categoryId)
+            ->unique()
+            ->values();
+    }
+
+    private function visibleCategoryIdsForStore(int $storeId, $categories)
+    {
+        $activeStoreCategoryIds = $this->activeStoreCategoryIds($storeId);
+
+        if ($activeStoreCategoryIds->isEmpty()) {
+            return collect();
+        }
+
         $productQuery = Product::query()
             ->fromActiveShop()
             ->where('shop_id', $storeId)
-            ->where('approved', 1);
+            ->where('approved', 1)
+            ->whereIn('category_id', $activeStoreCategoryIds);
 
         if (Schema::hasColumn('products', 'published')) {
             $productQuery->where('published', 1);
         }
 
-        $categoryIds = $productQuery->pluck('category_id')->filter()->unique()->values();
-        $parentIds = Category::whereIn('id', $categoryIds)
-            ->pluck('parent_id')
-            ->filter(fn ($parentId) => (int) $parentId > 0);
+        $visibleIds = $productQuery->pluck('category_id')
+            ->filter()
+            ->map(fn ($categoryId) => (int) $categoryId)
+            ->unique()
+            ->values();
 
-        return $categoryIds->merge($parentIds)->unique()->values();
+        $categoriesById = $categories->keyBy('id');
+        $activeLookup = $activeStoreCategoryIds->flip();
+        $idsWithActiveParents = collect($visibleIds);
+
+        foreach ($visibleIds as $categoryId) {
+            $category = $categoriesById->get($categoryId);
+
+            while ($category && (int) ($category->parent_id ?? 0) > 0) {
+                $parentId = (int) $category->parent_id;
+
+                if (!$activeLookup->has($parentId)) {
+                    break;
+                }
+
+                $idsWithActiveParents->push($parentId);
+                $category = $categoriesById->get($parentId);
+            }
+        }
+
+        return $idsWithActiveParents->unique()->values();
+    }
+
+    private function publicStoreCategoryTree($categories, $visibleCategoryIds, int $parentId = 0)
+    {
+        return $categories
+            ->where('parent_id', $parentId)
+            ->whereIn('id', $visibleCategoryIds)
+            ->values()
+            ->map(function ($category) use ($categories, $visibleCategoryIds) {
+                return [
+                    'id' => (int) $category->id,
+                    'parent_id' => (int) ($category->parent_id ?? 0),
+                    'name' => $category->name,
+                    'slug' => $category->slug,
+                    'icon' => $category->icon,
+                    'cover_image' => $category->cover_image,
+                    'banner' => $category->banner,
+                    'children' => $this->publicStoreCategoryTree($categories, $visibleCategoryIds, (int) $category->id),
+                ];
+            });
     }
 
     /**
@@ -159,17 +217,33 @@ class CategoryController extends Controller
     public function listCategories(Request $request)
     {
         try {
+            if ($request->filled('store_slug')) {
+                $storeId = $this->resolveActiveStoreIdFromSlug($request);
+
+                if (!$storeId) {
+                    return $this->success('Categories fetched successfully', []);
+                }
+
+                $categories = Category::query()
+                    ->where('is_active', 1)
+                    ->orderByRaw('COALESCE(order_level, 999999) asc')
+                    ->latest()
+                    ->get();
+
+                $visibleCategoryIds = $this->visibleCategoryIdsForStore($storeId, $categories);
+
+                return $this->success(
+                    'Categories fetched successfully',
+                    $this->publicStoreCategoryTree($categories, $visibleCategoryIds)
+                );
+            }
+
             // Only show top-level featured categories (no children)
             $query = Category::query()
             ->with('banner')
                 ->where('parent_id', 0)
                 ->where('is_active', 1)
                 ->where('featured', 1);
-
-            $storeId = $this->resolveActiveStoreIdFromSlug($request);
-            if ($storeId !== null) {
-                $query->whereIn('id', $this->visibleCategoryIdsForStore($storeId));
-            }
 
             $perPage = (int) $request->get('per_page', 20);
 
@@ -190,6 +264,13 @@ class CategoryController extends Controller
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    public function publicStoreCategories(Request $request, string $slug)
+    {
+        $request->merge(['store_slug' => $slug]);
+
+        return $this->listCategories($request);
     }
 
     /**

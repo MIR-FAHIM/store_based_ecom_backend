@@ -53,6 +53,11 @@ class Shops extends Model
         return $this->hasMany(StoreSubscription::class, 'store_id');
     }
 
+    public function storeCategories()
+    {
+        return $this->hasMany(StoreCategory::class, 'store_id');
+    }
+
     public function currentSubscription()
     {
         return $this->hasOne(StoreSubscription::class, 'store_id')

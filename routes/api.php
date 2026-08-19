@@ -33,6 +33,7 @@ use App\Http\Controllers\ErrorLogController;
 use App\Http\Controllers\LoginSuccessLogController;
 use App\Http\Controllers\FirebaseNotificationController;
 use App\Http\Controllers\SubscriptionPackageController;
+use App\Http\Controllers\SellerStoreCategoryController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -66,6 +67,10 @@ Route::prefix('categories')->group(function () {
     Route::put('/update/{id}', [CategoryController::class, 'updateCategory']);
 
     Route::delete('/delete/{id}', [CategoryController::class, 'deleteCategory']);
+});
+
+Route::prefix('public/stores')->group(function () {
+    Route::get('/{slug}/categories', [CategoryController::class, 'publicStoreCategories'])->withoutMiddleware('token');
 });
 
 Route::prefix('brands')->group(function () {
@@ -122,6 +127,12 @@ Route::prefix('shops')->group(function () {
 Route::prefix('stores')->group(function () {
     Route::get('/{storeId}/subscription', [SubscriptionPackageController::class, 'storeCurrentSubscription']);
     Route::post('/{storeId}/subscription/subscribe', [SubscriptionPackageController::class, 'subscribe']);
+});
+
+Route::prefix('seller/stores/{storeId}/categories')->group(function () {
+    Route::get('/marketplace', [SellerStoreCategoryController::class, 'marketplace']);
+    Route::post('/toggle', [SellerStoreCategoryController::class, 'toggle']);
+    Route::post('/sync', [SellerStoreCategoryController::class, 'sync']);
 });
 
 

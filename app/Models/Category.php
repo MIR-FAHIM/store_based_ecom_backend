@@ -73,4 +73,9 @@ class Category extends Model
     {
         return $this->hasMany(Category::class, 'parent_id');
     }
+
+    public function storeCategories()
+    {
+        return $this->hasMany(StoreCategory::class, 'category_id');
+    }
 }
