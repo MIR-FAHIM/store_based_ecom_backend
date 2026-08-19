@@ -78,8 +78,8 @@ class CategoryController extends Controller
                     'parent_id' => (int) ($category->parent_id ?? 0) > 0 ? (int) $category->parent_id : null,
                     'name' => $category->name,
                     'slug' => $category->slug,
-                    'icon' => $category->icon,
-                    'cover_image' => $category->cover_image,
+                    'icon' => $category->iconImage,
+                    'cover_image' => $category->coverImage,
                     'banner' => $category->banner,
                     'children' => $this->publicStoreCategoryTree($categories, $visibleCategoryIds, (int) $category->id),
                 ];
