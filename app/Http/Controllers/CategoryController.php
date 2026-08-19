@@ -178,7 +178,9 @@ class CategoryController extends Controller
 
                 $categories = Category::query()
                   ->with('banner', 'coverImage','iconImage')
-                    ->where('is_active', 1)
+                   ->where('parent_id', 0)
+                ->where('is_active', 1)
+                ->where('featured', 1)
                     ->orderByRaw('COALESCE(order_level, 999999) asc')
                     ->latest()
                   
