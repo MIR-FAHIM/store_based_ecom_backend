@@ -180,6 +180,7 @@ class CategoryController extends Controller
                     ->where('is_active', 1)
                     ->orderByRaw('COALESCE(order_level, 999999) asc')
                     ->latest()
+                    ->with('banner', 'coverImage')
                     ->get();
 
                 $visibleCategoryIds = $this->activeStoreCategoryIds($storeId);
@@ -192,7 +193,7 @@ class CategoryController extends Controller
 
             // Only show top-level featured categories (no children)
             $query = Category::query()
-            ->with('banner')
+            ->with('banner', 'coverImage')
                 ->where('parent_id', 0)
                 ->where('is_active', 1)
                 ->where('featured', 1);
