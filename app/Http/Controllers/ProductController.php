@@ -154,10 +154,14 @@ class ProductController extends Controller
 
         if ($storeId !== null) {
             $query->where('shop_id', $storeId);
-            $query->whereHas('category.storeCategories', function ($storeCategoryQuery) use ($storeId) {
-                $storeCategoryQuery->where('store_id', $storeId)
-                    ->where('is_active', true);
-            });
+
+            $activeCategoryIds = StoreCategory::where('store_id', $storeId)
+                ->where('is_active', true)
+                ->pluck('category_id');
+
+            if ($activeCategoryIds->isNotEmpty()) {
+                $query->whereIn('category_id', $activeCategoryIds);
+            }
         }
 
         return $query;
@@ -1265,7 +1269,7 @@ class ProductController extends Controller
     /**
      * GET /products/details/{identifier}
      */
-    public function getProductDetails($identifier)
+    public function getProductDetails(Request $request, $identifier)
     {
         try {
             $query = Product::query()->with([
@@ -1282,6 +1286,9 @@ class ProductController extends Controller
 
             ]);
 
+            $this->applyStoreSlugFilter($query, $request);
+            $this->applyPublicProductVisibility($query);
+
             $product = is_numeric($identifier)
                 ? $query->whereKey($identifier)->first()
                 : $query->where('slug', $identifier)->first();
@@ -1290,7 +1297,12 @@ class ProductController extends Controller
                 return $this->failed('Product not found', null, 404);
             }
             $productArr = $product->toArray();
+            $productArr['price'] = $product->unit_price;
+            $productArr['sale_price'] = $this->getFinalSalePrice($product);
             $productArr['final_sale_price'] = $this->getFinalSalePrice($product);
+            $productArr['primary_image'] = $product->primaryImage;
+            $productArr['stock'] = $product->current_stock;
+            $productArr['store_id'] = $product->shop_id;
             $productArr['seo'] = $product->seo;
             return $this->success('Product fetched successfully', $productArr);
         } catch (\Throwable $e) {
@@ -1559,7 +1571,10 @@ class ProductController extends Controller
             return $this->failed('product_id is required', null, 422);
         }
 
-        $product = Product::fromActiveShop()->find($productId);
+        $productQuery = Product::fromActiveShop();
+        $this->applyStoreSlugFilter($productQuery, $request);
+
+        $product = $productQuery->find($productId);
         if (!$product) {
             return $this->failed('Product not found', null, 404);
         }
@@ -1569,7 +1584,7 @@ class ProductController extends Controller
             return $this->failed('Shop not found for this product', null, 404);
         }
 
-        $products = Product::fromActiveShop()->with([
+        $productsQuery = Product::fromActiveShop()->with([
             'primaryImage',
             'images',
             'category',
@@ -1580,10 +1595,13 @@ class ProductController extends Controller
             'shop'
         ])
         ->where('shop_id', $shopId)
-        ->where('seller_featured', 1)
-        ->limit(8)
-        
-        ->get();
+        ->where('seller_featured', 1);
+
+        $products = $this->applyPublicProductVisibility($productsQuery)
+            ->limit(8)
+            ->get();
+
+        $products = $this->addStorefrontProductFields($products);
 
         return $this->success('Seller featured products fetched successfully', $products, 200);
     }

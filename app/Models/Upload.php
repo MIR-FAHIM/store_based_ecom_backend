@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Facades\Storage;
 
 class Upload extends Model
 {
@@ -46,7 +45,9 @@ class Upload extends Model
             return $this->external_link;
         }
 
-      
+        if ($this->file_name) {
+            return asset('storage/' . ltrim($this->file_name, '/'));
+        }
 
         return null;
     }

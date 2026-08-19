@@ -34,6 +34,26 @@ class BannerController extends Controller
         ], $code);
     }
 
+    private function formatBannerForPublic($banner): array
+    {
+        $image = $banner->relationLoaded('image') ? $banner->image : null;
+        $product = $banner->relationLoaded('product') ? $banner->product : null;
+
+        return [
+            'id' => (int) $banner->id,
+            'banner_name' => $banner->banner_name,
+            'title' => $banner->title,
+            'image' => $image,
+            'image_path' => $banner->image_path,
+            'related_category_id' => $banner->related_category_id ? (int) $banner->related_category_id : null,
+            'related_product_id' => $banner->related_product_id ? (int) $banner->related_product_id : null,
+            'related_product_slug' => $product ? $product->slug : null,
+            'link' => null,
+            'shop_id' => $banner->shop_id ? (int) $banner->shop_id : null,
+            'store_id' => $banner->shop_id ? (int) $banner->shop_id : null,
+        ];
+    }
+
     /**
      * POST /banners/add
      */
@@ -117,17 +137,17 @@ class BannerController extends Controller
             $banners = $query
                 ->latest()
                 ->get()
-                ->map(function ($banner) {
-                    $banner->store_id = $banner->shop_id;
-                    $banner->image = $banner->relationLoaded('image') ? $banner->image : null;
-
-                    return $banner;
-                });
+                ->map(fn ($banner) => $this->formatBannerForPublic($banner));
 
             return $this->success('Active banners fetched', $banners);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    public function listBanners(Request $request)
+    {
+        return $this->getActiveBanner($request);
     }
 
     /**

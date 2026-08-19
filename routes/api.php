@@ -224,6 +224,7 @@ Route::prefix('reviews')->group(function () {
 Route::prefix('banners')->group(function () {
     Route::post('/add', [BannerController::class, 'addBanner']);
     Route::put('/update/{id}', [BannerController::class, 'updateBanner']);
+    Route::get('/list', [BannerController::class, 'listBanners'])->withoutMiddleware('token');
     Route::get('/active', [BannerController::class, 'getActiveBanner'])->withoutMiddleware('token');
     Route::delete('/remove/{id}', [BannerController::class, 'removeBanner']);
 });

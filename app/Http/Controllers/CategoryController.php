@@ -3,11 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
-use App\Models\Product;
 use App\Models\Shops;
 use App\Models\StoreCategory;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -68,52 +66,6 @@ class CategoryController extends Controller
             ->values();
     }
 
-    private function visibleCategoryIdsForStore(int $storeId, $categories)
-    {
-        $activeStoreCategoryIds = $this->activeStoreCategoryIds($storeId);
-
-        if ($activeStoreCategoryIds->isEmpty()) {
-            return collect();
-        }
-
-        $productQuery = Product::query()
-            ->fromActiveShop()
-            ->where('shop_id', $storeId)
-            ->where('approved', 1)
-            ->whereIn('category_id', $activeStoreCategoryIds);
-
-        if (Schema::hasColumn('products', 'published')) {
-            $productQuery->where('published', 1);
-        }
-
-        $visibleIds = $productQuery->pluck('category_id')
-            ->filter()
-            ->map(fn ($categoryId) => (int) $categoryId)
-            ->unique()
-            ->values();
-
-        $categoriesById = $categories->keyBy('id');
-        $activeLookup = $activeStoreCategoryIds->flip();
-        $idsWithActiveParents = collect($visibleIds);
-
-        foreach ($visibleIds as $categoryId) {
-            $category = $categoriesById->get($categoryId);
-
-            while ($category && (int) ($category->parent_id ?? 0) > 0) {
-                $parentId = (int) $category->parent_id;
-
-                if (!$activeLookup->has($parentId)) {
-                    break;
-                }
-
-                $idsWithActiveParents->push($parentId);
-                $category = $categoriesById->get($parentId);
-            }
-        }
-
-        return $idsWithActiveParents->unique()->values();
-    }
-
     private function publicStoreCategoryTree($categories, $visibleCategoryIds, int $parentId = 0)
     {
         return $categories
@@ -123,7 +75,7 @@ class CategoryController extends Controller
             ->map(function ($category) use ($categories, $visibleCategoryIds) {
                 return [
                     'id' => (int) $category->id,
-                    'parent_id' => (int) ($category->parent_id ?? 0),
+                    'parent_id' => (int) ($category->parent_id ?? 0) > 0 ? (int) $category->parent_id : null,
                     'name' => $category->name,
                     'slug' => $category->slug,
                     'icon' => $category->icon,
@@ -230,7 +182,7 @@ class CategoryController extends Controller
                     ->latest()
                     ->get();
 
-                $visibleCategoryIds = $this->visibleCategoryIdsForStore($storeId, $categories);
+                $visibleCategoryIds = $this->activeStoreCategoryIds($storeId);
 
                 return $this->success(
                     'Categories fetched successfully',

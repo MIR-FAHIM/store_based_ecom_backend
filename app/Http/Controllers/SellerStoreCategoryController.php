@@ -22,7 +22,7 @@ class SellerStoreCategoryController extends Controller
     private function failed($message, $errors = null, int $code = 400)
     {
         return response()->json([
-            'status' => 'failed',
+            'status' => 'error',
             'message' => $message,
             'errors' => $errors,
         ], $code);
@@ -65,7 +65,7 @@ class SellerStoreCategoryController extends Controller
             ->map(function ($category) use ($categories, $activeCategoryIds) {
                 return [
                     'id' => (int) $category->id,
-                    'parent_id' => (int) ($category->parent_id ?? 0),
+                    'parent_id' => (int) ($category->parent_id ?? 0) > 0 ? (int) $category->parent_id : null,
                     'name' => $category->name,
                     'slug' => $category->slug,
                     'icon' => $category->icon,
