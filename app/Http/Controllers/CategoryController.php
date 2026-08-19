@@ -49,7 +49,7 @@ class CategoryController extends Controller
             return null;
         }
 
-        $store = Shops::where('slug', $request->query('store_slug'))
+        $store = Shops::where('slug', $request->input('store_slug'))
             ->where('status', 'active')
             ->first();
 
