@@ -177,10 +177,11 @@ class CategoryController extends Controller
                 }
 
                 $categories = Category::query()
+                  ->with('banner', 'coverImage','iconImage')
                     ->where('is_active', 1)
                     ->orderByRaw('COALESCE(order_level, 999999) asc')
                     ->latest()
-                    ->with('banner', 'coverImage','iconImage')
+                  
                     ->get();
 
                 $visibleCategoryIds = $this->activeStoreCategoryIds($storeId);
