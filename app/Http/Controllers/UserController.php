@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 
 class UserController extends Controller
 {
@@ -31,6 +32,56 @@ class UserController extends Controller
         ], $code);
     }
 
+    private function generateReferralCode(): string
+    {
+        do {
+            $code = Str::upper(Str::random(8));
+        } while (User::where('referral_code', $code)->exists());
+
+        return $code;
+    }
+
+    private function resolveReferrer(?string $referralCode): ?User
+    {
+        if (!$referralCode) {
+            return null;
+        }
+
+        return User::whereRaw('LOWER(referral_code) = ?', [strtolower(trim($referralCode))])->first();
+    }
+
+    /**
+     * GET /users/check-referral-code?referral_code=...
+     */
+    public function checkReferralCode(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'referral_code' => ['required', 'string', 'max:255'],
+            ]);
+
+            $referrer = $this->resolveReferrer($validated['referral_code']);
+
+            if (!$referrer) {
+                return $this->success('Referral code is invalid', [
+                    'valid' => false,
+                ]);
+            }
+
+            return $this->success('Referral code is valid', [
+                'valid' => true,
+                'referrer' => [
+                    'id' => (int) $referrer->id,
+                    'name' => $referrer->name,
+                ],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
     /**
      * POST /users/create
      */
@@ -50,8 +101,15 @@ class UserController extends Controller
                 'state' => ['nullable', 'string', 'max:100'],
                 'city' => ['nullable', 'string', 'max:100'],
                 'postal_code' => ['nullable', 'string', 'max:20'],
-              
+                'referral_code' => ['nullable', 'string', 'max:255'],
             ]);
+
+            $referrer = $this->resolveReferrer($validated['referral_code'] ?? null);
+            if (($validated['referral_code'] ?? null) && !$referrer) {
+                return $this->failed('Invalid referral code', [
+                    'referral_code' => ['The referral code is invalid.'],
+                ], 422);
+            }
 
             $user = User::create([
                 'name' => $validated['name'] ?? null,
@@ -66,7 +124,8 @@ class UserController extends Controller
                 'state' => $validated['state'] ?? null,
                 'city' => $validated['city'] ?? null,
                 'postal_code' => $validated['postal_code'] ?? null,
-         
+                'referral_code' => $this->generateReferralCode(),
+                'referred_by' => $referrer?->id,
             ]);
 
             return $this->success('User created successfully', $user, 201);
@@ -93,7 +152,15 @@ class UserController extends Controller
                 'state' => ['nullable', 'string', 'max:100'],
                 'city' => ['nullable', 'string', 'max:100'],
                 'postal_code' => ['nullable', 'string', 'max:20'],
+                'referral_code' => ['nullable', 'string', 'max:255'],
             ]);
+
+            $referrer = $this->resolveReferrer($validated['referral_code'] ?? null);
+            if (($validated['referral_code'] ?? null) && !$referrer) {
+                return $this->failed('Invalid referral code', [
+                    'referral_code' => ['The referral code is invalid.'],
+                ], 422);
+            }
 
             $user = User::create([
                 'name' => $validated['name'] ?? null,
@@ -108,6 +175,8 @@ class UserController extends Controller
                 'state' => $validated['state'] ?? null,
                 'city' => $validated['city'] ?? null,
                 'postal_code' => $validated['postal_code'] ?? null,
+                'referral_code' => $this->generateReferralCode(),
+                'referred_by' => $referrer?->id,
             ]);
 
             // Create Shop for this seller
