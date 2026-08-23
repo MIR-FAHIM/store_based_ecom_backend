@@ -49,6 +49,7 @@ class BannerController extends Controller
             'related_product_id' => $banner->related_product_id ? (int) $banner->related_product_id : null,
             'related_product_slug' => $product ? $product->slug : null,
             'link' => null,
+            'is_active' =>  $banner->is_active,
             'shop_id' => $banner->shop_id ? (int) $banner->shop_id : null,
             'store_id' => $banner->shop_id ? (int) $banner->shop_id : null,
         ];
