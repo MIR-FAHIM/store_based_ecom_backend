@@ -8,6 +8,7 @@ use App\Models\ProductCreateErrorLog;
 use App\Models\ProductImage;
 use App\Models\Shops;
 use App\Models\StoreCategory;
+use App\Models\StoreProduct;
 use App\Models\Upload;
 use Illuminate\Http\Request;
 use Illuminate\Database\QueryException;
@@ -55,6 +56,19 @@ class ProductController extends Controller
             }
         }
         return round($finalSalePrice, 2);
+    }
+
+    private function getFinalSalePriceFromValues(float $price, ?float $discount, ?string $discountType): float
+    {
+        if (!$discount || !$discountType) {
+            return round($price, 2);
+        }
+
+        if ($discountType === 'percent') {
+            return round(max(0, $price - ($price * ($discount / 100))), 2);
+        }
+
+        return round(max(0, $price - $discount), 2);
     }
 
     private function logProductCreateError(Request $request, \Throwable $e, string $level = 'error', ?array $requestData = null): void
@@ -205,6 +219,132 @@ class ProductController extends Controller
         }
 
         return $products->map($decorate);
+    }
+
+    private function formatStoreProductForPublic(StoreProduct $storeProduct): array
+    {
+        $product = $storeProduct->product;
+        $price = (float) ($storeProduct->price ?? $product->unit_price ?? 0);
+        $discount = $storeProduct->discount !== null ? (float) $storeProduct->discount : ($product->discount !== null ? (float) $product->discount : null);
+        $discountType = $storeProduct->discount_type ?? $product->discount_type ?? null;
+        $salePrice = $this->getFinalSalePriceFromValues($price, $discount, $discountType);
+
+        return [
+            'store_product_id' => (int) $storeProduct->id,
+            'id' => (int) $product->id,
+            'product_id' => (int) $product->id,
+            'name' => $storeProduct->title_override ?: $product->name,
+            'master_name' => $product->name,
+            'slug' => $product->slug,
+            'description' => $storeProduct->description_override ?: $product->description,
+            'price' => $price,
+            'unit_price' => $price,
+            'sale_price' => $salePrice,
+            'final_sale_price' => $salePrice,
+            'discount' => $discount,
+            'discount_type' => $discountType,
+            'primary_image' => $product->primaryImage,
+            'category_id' => $product->category_id ? (int) $product->category_id : null,
+            'brand_id' => $product->brand_id ? (int) $product->brand_id : null,
+            'stock' => $storeProduct->stock ?? $product->current_stock,
+            'current_stock' => $storeProduct->stock ?? $product->current_stock,
+            'sku' => $storeProduct->sku,
+            'shop_id' => (int) $storeProduct->store_id,
+            'store_id' => (int) $storeProduct->store_id,
+            'featured' => (bool) $storeProduct->is_featured,
+            'is_featured' => (bool) $storeProduct->is_featured,
+            'todays_deal' => (bool) $storeProduct->todays_deal,
+            'category' => $product->category,
+            'brand' => $product->brand,
+            'average_review' => $product->averageReview,
+            'product' => $product,
+        ];
+    }
+
+    private function publicStoreProductQuery(Request $request, ?string $flag = null)
+    {
+        $storeId = $this->resolveActiveStoreIdFromSlug($request);
+
+        if (!$storeId) {
+            return null;
+        }
+
+        $query = StoreProduct::with([
+            'product.primaryImage',
+            'product.images.upload',
+            'product.category',
+            'product.brand',
+            'product.averageReview',
+        ])
+            ->where('store_id', $storeId)
+            ->where('is_active', true)
+            ->whereHas('product', function ($productQuery) {
+                $this->applyPublicProductVisibility($productQuery);
+            });
+
+        $activeCategoryIds = StoreCategory::where('store_id', $storeId)
+            ->where('is_active', true)
+            ->pluck('category_id');
+
+        if ($activeCategoryIds->isNotEmpty()) {
+            $query->whereHas('product', function ($productQuery) use ($activeCategoryIds) {
+                $productQuery->whereIn('category_id', $activeCategoryIds);
+            });
+        }
+
+        if ($flag === 'featured') {
+            $query->where('is_featured', true);
+        }
+
+        if ($flag === 'todays_deal') {
+            $query->where('todays_deal', true);
+        }
+
+        if ($request->filled('category_id')) {
+            $categoryId = (int) $request->category_id;
+            $query->whereHas('product', function ($productQuery) use ($categoryId) {
+                $productQuery->where('category_id', $categoryId)
+                    ->orWhereHas('category', fn ($categoryQuery) => $categoryQuery->where('parent_id', $categoryId));
+            });
+        }
+
+        if ($request->filled('brand_id')) {
+            $query->whereHas('product', fn ($productQuery) => $productQuery->where('brand_id', (int) $request->brand_id));
+        }
+
+        if ($request->filled('search')) {
+            $tokens = preg_split('/\s+/', trim((string) $request->search));
+
+            $query->whereHas('product', function ($productQuery) use ($tokens) {
+                foreach ($tokens as $token) {
+                    $like = '%' . $token . '%';
+                    $productQuery->where(function ($qq) use ($like) {
+                        $qq->where('name', 'like', $like)
+                            ->orWhere('slug', 'like', $like)
+                            ->orWhere('tags', 'like', $like)
+                            ->orWhereHas('category', fn ($categoryQuery) => $categoryQuery->where('name', 'like', $like))
+                            ->orWhereHas('brand', fn ($brandQuery) => $brandQuery->where('name', 'like', $like));
+                    });
+                }
+            });
+        }
+
+        return $query;
+    }
+
+    private function publicStoreProductPaginator(Request $request, ?string $flag = null, int $defaultPerPage = 24)
+    {
+        $query = $this->publicStoreProductQuery($request, $flag);
+
+        if (!$query) {
+            return null;
+        }
+
+        $perPage = (int) $request->get('per_page', $defaultPerPage);
+        $storeProducts = $query->latest()->paginate($perPage);
+        $storeProducts->setCollection($storeProducts->getCollection()->map(fn ($storeProduct) => $this->formatStoreProductForPublic($storeProduct)));
+
+        return $storeProducts;
     }
 
     private function normalizeProductPhotos($photos): array
@@ -454,8 +594,11 @@ class ProductController extends Controller
                 $product = Product::create($productData);
 
                 // Auto-generate SKU: p{id}v{vendor_id}
-                $product->sku = 'p' . $product->id . 'v' . ($product->shop_id ?? '0');
-                $product->save();
+                $storeSku = 'p' . $product->id . 'v' . ($product->shop_id ?? '0');
+                if (Schema::hasColumn('products', 'sku')) {
+                    $product->sku = $storeSku;
+                    $product->save();
+                }
 
                 if (!empty($productData['thumbnail_img'])) {
                     ProductImage::create([
@@ -465,6 +608,23 @@ class ProductController extends Controller
                         'status' => 'active',
                     ]);
                 }
+
+                StoreProduct::updateOrCreate(
+                    [
+                        'store_id' => $product->shop_id,
+                        'product_id' => $product->id,
+                    ],
+                    [
+                        'price' => $product->unit_price,
+                        'discount' => $product->discount,
+                        'discount_type' => $product->discount_type,
+                        'stock' => $product->current_stock,
+                        'sku' => $storeSku,
+                        'is_active' => true,
+                        'is_featured' => (bool) $product->featured,
+                        'todays_deal' => (bool) $product->todays_deal,
+                    ]
+                );
             } catch (QueryException $e) {
                 $this->logProductCreateError($request, $e, 'error', $productData);
 
@@ -728,6 +888,14 @@ class ProductController extends Controller
     public function listProducts(Request $request)
     {
         try {
+            if ($request->filled('store_slug')) {
+                $products = $this->publicStoreProductPaginator($request, null, 24);
+
+                if ($products) {
+                    return $this->success('Products fetched successfully', $products, 200);
+                }
+            }
+
             $query = Product::query()->fromActiveShop()->with([
                 'primaryImage',
                 'images',
@@ -1022,6 +1190,14 @@ class ProductController extends Controller
     public function listFeaturedProducts(Request $request)
     {
         try {
+            if ($request->filled('store_slug')) {
+                $products = $this->publicStoreProductPaginator($request, 'featured', 20);
+
+                if ($products) {
+                    return $this->success('Products fetched successfully', $products, 200);
+                }
+            }
+
             $query = Product::query()->fromActiveShop()->with([
                 'primaryImage',
                 'images',
@@ -1081,6 +1257,14 @@ class ProductController extends Controller
     public function listCategoryProducts(Request $request)
     {
         try {
+            if ($request->filled('store_slug')) {
+                $products = $this->publicStoreProductPaginator($request, null, 20);
+
+                if ($products) {
+                    return $this->success('Products fetched successfully', $products, 200);
+                }
+            }
+
             $query = Product::query()->fromActiveShop()->with(['primaryImage', 'images', 'category', 'subCategory', 'brand', 'productDiscount', 'averageReview']);
 
             $this->applyStoreSlugFilter($query, $request);
@@ -1141,6 +1325,14 @@ class ProductController extends Controller
     public function listTodayDealProducts(Request $request)
     {
         try {
+            if ($request->filled('store_slug')) {
+                $products = $this->publicStoreProductPaginator($request, 'todays_deal', 20);
+
+                if ($products) {
+                    return $this->success('Products fetched successfully', $products, 200);
+                }
+            }
+
             $query = Product::query()->fromActiveShop()->with(['primaryImage', 'images', 'category', 'subCategory', 'brand', 'productDiscount', 'averageReview', 'shop']);
 
             $this->applyStoreSlugFilter($query, $request);
@@ -1272,6 +1464,24 @@ class ProductController extends Controller
     public function getProductDetails(Request $request, $identifier)
     {
         try {
+            if ($request->filled('store_slug')) {
+                $query = $this->publicStoreProductQuery($request);
+
+                if (!$query) {
+                    return $this->failed('Product not found', null, 404);
+                }
+
+                $storeProduct = is_numeric($identifier)
+                    ? $query->where('product_id', (int) $identifier)->first()
+                    : $query->whereHas('product', fn ($productQuery) => $productQuery->where('slug', $identifier))->first();
+
+                if (!$storeProduct) {
+                    return $this->failed('Product not found', null, 404);
+                }
+
+                return $this->success('Product fetched successfully', $this->formatStoreProductForPublic($storeProduct));
+            }
+
             $query = Product::query()->with([
                 'images.upload',
                 'primaryImage',
@@ -1569,6 +1779,30 @@ class ProductController extends Controller
         $productId = $request->query('product_id');
         if (!$productId) {
             return $this->failed('product_id is required', null, 422);
+        }
+
+        if ($request->filled('store_slug')) {
+            $query = $this->publicStoreProductQuery($request);
+
+            if (!$query) {
+                return $this->failed('Product not found', null, 404);
+            }
+
+            $storeProduct = $query->where('product_id', (int) $productId)->first();
+
+            if (!$storeProduct) {
+                return $this->failed('Product not found', null, 404);
+            }
+
+            $productsQuery = $this->publicStoreProductQuery($request, 'featured')
+                ->where('product_id', '!=', $storeProduct->product_id);
+
+            $products = $productsQuery
+                ->limit(8)
+                ->get()
+                ->map(fn ($featuredStoreProduct) => $this->formatStoreProductForPublic($featuredStoreProduct));
+
+            return $this->success('Seller featured products fetched successfully', $products, 200);
         }
 
         $productQuery = Product::fromActiveShop();

@@ -99,6 +99,11 @@ class Product extends Model
         return $this->belongsTo(Shops::class, 'shop_id');
     }
 
+    public function storeProducts()
+    {
+        return $this->hasMany(StoreProduct::class, 'product_id');
+    }
+
     public function scopeFromActiveShop($query)
     {
         return $query->whereHas('shop', function ($shopQuery) {
