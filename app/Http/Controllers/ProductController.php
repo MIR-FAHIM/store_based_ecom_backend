@@ -1475,11 +1475,44 @@ class ProductController extends Controller
                     ? $query->where('product_id', (int) $identifier)->first()
                     : $query->whereHas('product', fn ($productQuery) => $productQuery->where('slug', $identifier))->first();
 
-                if (!$storeProduct) {
+                if ($storeProduct) {
+                    return $this->success('Product fetched successfully', $this->formatStoreProductForPublic($storeProduct));
+                }
+
+                $legacyQuery = Product::query()->fromActiveShop()->with([
+                    'images.upload',
+                    'primaryImage',
+                    'brand',
+                    'category',
+                    'subCategory',
+                    'averageReview',
+                    'shop',
+                    'related',
+                    'productAttributes.attribute',
+                    'productAttributes.value',
+                ]);
+
+                $this->applyStoreSlugFilter($legacyQuery, $request);
+                $this->applyPublicProductVisibility($legacyQuery);
+
+                $product = is_numeric($identifier)
+                    ? $legacyQuery->whereKey($identifier)->first()
+                    : $legacyQuery->where('slug', $identifier)->first();
+
+                if (!$product) {
                     return $this->failed('Product not found', null, 404);
                 }
 
-                return $this->success('Product fetched successfully', $this->formatStoreProductForPublic($storeProduct));
+                $productArr = $product->toArray();
+                $productArr['price'] = $product->unit_price;
+                $productArr['sale_price'] = $this->getFinalSalePrice($product);
+                $productArr['final_sale_price'] = $this->getFinalSalePrice($product);
+                $productArr['primary_image'] = $product->primaryImage;
+                $productArr['stock'] = $product->current_stock;
+                $productArr['store_id'] = $product->shop_id;
+                $productArr['seo'] = $product->seo;
+
+                return $this->success('Product fetched successfully', $productArr);
             }
 
             $query = Product::query()->with([
