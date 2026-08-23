@@ -12,7 +12,7 @@ return new class extends Migration
         Schema::create('store_products', function (Blueprint $table) {
             $table->id();
             $table->foreignId('store_id')->constrained('shops')->cascadeOnDelete();
-            $table->foreignId('product_id')->constrained('products')->cascadeOnDelete();
+            $table->unsignedInteger('product_id');
             $table->decimal('price', 20, 2)->nullable();
             $table->decimal('discount', 20, 2)->nullable();
             $table->string('discount_type', 20)->nullable();
@@ -30,6 +30,11 @@ return new class extends Migration
             $table->index(['product_id', 'is_active']);
             $table->index(['store_id', 'is_featured']);
             $table->index(['store_id', 'todays_deal']);
+
+            $table->foreign('product_id')
+                ->references('id')
+                ->on('products')
+                ->cascadeOnDelete();
         });
 
         if (Schema::hasColumn('products', 'shop_id')) {
