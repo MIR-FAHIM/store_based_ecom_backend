@@ -30,11 +30,6 @@ return new class extends Migration
             $table->index(['product_id', 'is_active']);
             $table->index(['store_id', 'is_featured']);
             $table->index(['store_id', 'todays_deal']);
-
-            $table->foreign('product_id')
-                ->references('id')
-                ->on('products')
-                ->cascadeOnDelete();
         });
 
         if (Schema::hasColumn('products', 'shop_id')) {
