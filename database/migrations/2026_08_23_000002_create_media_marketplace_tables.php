@@ -25,7 +25,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('slug')->unique();
             $table->text('description')->nullable();
-            $table->foreignId('preview_image_id')->nullable()->constrained('uploads')->nullOnDelete();
+            $table->unsignedInteger('preview_image_id')->nullable()->index();
             $table->unsignedInteger('width')->nullable();
             $table->unsignedInteger('height')->nullable();
             $table->decimal('price', 12, 2)->default(0);
@@ -101,7 +101,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('order_item_id')->constrained('media_resource_order_items')->cascadeOnDelete();
             $table->foreignId('field_id')->nullable()->constrained('media_resource_fields')->nullOnDelete();
-            $table->foreignId('upload_id')->nullable()->constrained('uploads')->nullOnDelete();
+            $table->unsignedInteger('upload_id')->nullable()->index();
             $table->string('file_type', 60)->nullable();
             $table->string('file_path')->nullable();
             $table->string('original_name')->nullable();
@@ -112,7 +112,7 @@ return new class extends Migration
         Schema::create('media_resource_order_deliverables', function (Blueprint $table) {
             $table->id();
             $table->foreignId('order_item_id')->constrained('media_resource_order_items')->cascadeOnDelete();
-            $table->foreignId('upload_id')->nullable()->constrained('uploads')->nullOnDelete();
+            $table->unsignedInteger('upload_id')->nullable()->index();
             $table->string('file_type', 60)->default('draft');
             $table->string('file_path')->nullable();
             $table->unsignedInteger('version')->default(1);
