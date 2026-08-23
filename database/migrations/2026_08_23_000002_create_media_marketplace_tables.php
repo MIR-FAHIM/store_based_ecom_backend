@@ -34,8 +34,8 @@ return new class extends Migration
             $table->string('status', 30)->default('active')->index();
             $table->integer('sort_order')->default(0);
             $table->text('instructions')->nullable();
-            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->unsignedInteger('created_by')->nullable()->index();
+            $table->unsignedInteger('updated_by')->nullable()->index();
             $table->timestamps();
         });
 
@@ -57,8 +57,8 @@ return new class extends Migration
         Schema::create('media_resource_orders', function (Blueprint $table) {
             $table->id();
             $table->string('order_number')->unique();
-            $table->foreignId('store_id')->constrained('shops')->cascadeOnDelete();
-            $table->foreignId('seller_id')->constrained('users')->cascadeOnDelete();
+            $table->unsignedInteger('store_id')->index();
+            $table->unsignedInteger('seller_id')->index();
             $table->string('status', 40)->default('pending_payment')->index();
             $table->string('payment_status', 40)->default('unpaid')->index();
             $table->decimal('subtotal', 12, 2)->default(0);
@@ -67,7 +67,7 @@ return new class extends Migration
             $table->string('currency', 10)->default('BDT');
             $table->text('customer_note')->nullable();
             $table->text('admin_note')->nullable();
-            $table->foreignId('assigned_to')->nullable()->constrained('users')->nullOnDelete();
+            $table->unsignedInteger('assigned_to')->nullable()->index();
             $table->timestamp('paid_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
@@ -117,7 +117,7 @@ return new class extends Migration
             $table->string('file_path')->nullable();
             $table->unsignedInteger('version')->default(1);
             $table->text('note')->nullable();
-            $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->unsignedInteger('uploaded_by')->nullable()->index();
             $table->timestamps();
         });
 
@@ -125,7 +125,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('order_item_id')->constrained('media_resource_order_items')->cascadeOnDelete();
             $table->unsignedInteger('revision_number')->default(1);
-            $table->foreignId('requested_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->unsignedInteger('requested_by')->nullable()->index();
             $table->text('request_note');
             $table->string('status', 40)->default('requested')->index();
             $table->timestamp('resolved_at')->nullable();
