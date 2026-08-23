@@ -3,6 +3,7 @@
 namespace App\Service;
 
 use App\Models\OnlinePayment;
+use App\Models\MediaResourceOrder;
 use App\Models\Order;
 use App\Models\Shops;
 use App\Models\StoreSubscription;
@@ -18,6 +19,7 @@ class AmarPayService
 {
     private const PAYMENT_TYPE_ORDER = 'order';
     private const PAYMENT_TYPE_STORE_SUBSCRIPTION = 'store_subscription';
+    private const PAYMENT_TYPE_MEDIA_RESOURCE_ORDER = 'media_resource_order';
 
     public function initiatePayment(?int $orderId, ?User $authenticatedUser = null, ?string $paymentGroupId = null): JsonResponse
     {
@@ -279,6 +281,143 @@ class AmarPayService
         ], 201);
     }
 
+    public function initiateMediaResourceOrderPayment(MediaResourceOrder $mediaOrder, ?User $authenticatedUser = null): JsonResponse
+    {
+        $configError = $this->validateConfig();
+        if ($configError) {
+            return $this->jsonFailed($configError, null, 500);
+        }
+
+        if (!$authenticatedUser) {
+            return $this->jsonFailed('Authentication required', null, 401);
+        }
+
+        $mediaOrder->loadMissing(['store', 'seller', 'items.resource']);
+        $store = $mediaOrder->store;
+
+        if (!$store) {
+            return $this->jsonFailed('Store not found for media order', null, 404);
+        }
+
+        if (!$this->canInitiatePaymentForStore($store, $authenticatedUser)) {
+            return $this->jsonFailed('You cannot pay for this media order', [
+                'store_owner_id' => $store->user_id,
+                'authenticated_user_id' => (int) $authenticatedUser->id,
+            ], 403);
+        }
+
+        if ($mediaOrder->payment_status === 'paid' || $mediaOrder->status === 'completed') {
+            return $this->jsonFailed('This media order is already paid', null, 409);
+        }
+
+        $amount = round((float) $mediaOrder->total, 2);
+        if ($amount <= 0) {
+            $mediaOrder->update([
+                'status' => 'paid',
+                'payment_status' => 'paid',
+                'paid_at' => $mediaOrder->paid_at ?: now(),
+            ]);
+
+            return $this->jsonSuccess('Media order activated successfully', [
+                'media_order' => $mediaOrder->fresh(['store', 'items.resource']),
+                'payment_required' => false,
+                'payment_url' => null,
+            ]);
+        }
+
+        $merchantTransactionId = 'MEDIA-' . $mediaOrder->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999);
+
+        $payment = OnlinePayment::create([
+            'payment_type' => self::PAYMENT_TYPE_MEDIA_RESOURCE_ORDER,
+            'order_id' => null,
+            'payment_group_id' => null,
+            'order_ids' => null,
+            'store_subscription_id' => null,
+            'media_resource_order_id' => $mediaOrder->id,
+            'store_id' => $mediaOrder->store_id,
+            'user_id' => $authenticatedUser->id,
+            'gateway' => 'aamarpay',
+            'merchant_transaction_id' => $merchantTransactionId,
+            'amount' => $amount,
+            'currency' => $mediaOrder->currency ?: 'BDT',
+            'status' => 'initiated',
+            'initiated_at' => now(),
+        ]);
+
+        $customerName = $store->shop_name ?: $store->name ?: $authenticatedUser->name ?: 'Store Owner';
+        $customerEmail = $store->email ?: $authenticatedUser->email ?: 'merchant@example.com';
+        $customerPhone = $store->phone ?: $authenticatedUser->phone ?: '01000000000';
+        $address = $store->address ?: 'Not provided';
+        $city = $store->district ?: $store->area ?: 'Dhaka';
+        $state = $store->zone ?: $store->district ?: 'Dhaka';
+
+        $payload = [
+            'store_id' => config('services.aamarpay.store_id'),
+            'tran_id' => $merchantTransactionId,
+            'success_url' => $this->callbackUrl('success'),
+            'fail_url' => $this->callbackUrl('fail'),
+            'cancel_url' => $this->callbackUrl('cancel'),
+            'amount' => number_format($amount, 2, '.', ''),
+            'currency' => $mediaOrder->currency ?: 'BDT',
+            'signature_key' => config('services.aamarpay.signature_key'),
+            'desc' => 'Media order #' . $mediaOrder->order_number,
+            'cus_name' => $customerName,
+            'cus_email' => $customerEmail,
+            'cus_phone' => $customerPhone,
+            'cus_add1' => $address,
+            'cus_city' => $city,
+            'cus_state' => $state,
+            'cus_country' => 'Bangladesh',
+            'opt_a' => 'media_resource_order',
+            'opt_b' => (string) $mediaOrder->id,
+            'opt_c' => (string) $mediaOrder->store_id,
+            'type' => 'json',
+        ];
+        $payload = array_filter($payload, fn ($value) => $value !== null && $value !== '');
+
+        try {
+            $response = Http::timeout(20)
+                ->asJson()
+                ->post($this->paymentUrl(), $payload);
+        } catch (ConnectionException $e) {
+            $payment->update([
+                'status' => 'failed',
+                'gateway_response' => ['error' => $e->getMessage()],
+            ]);
+
+            return $this->jsonFailed('Could not connect to AamarPay', null, 502);
+        }
+
+        $result = $response->json();
+        if (!is_array($result)) {
+            $result = ['raw_response' => $response->body()];
+        }
+
+        $payment->update([
+            'gateway_response' => [
+                'request' => $this->safePayloadForLogs($payload),
+                'response' => $result,
+            ],
+        ]);
+
+        if (!$response->successful() || !$this->gatewayAccepted($result) || empty($result['payment_url'])) {
+            $payment->update(['status' => 'failed']);
+
+            return $this->jsonFailed('AamarPay rejected the media order payment request', $result, 502);
+        }
+
+        $payment->update(['status' => 'pending']);
+
+        return $this->jsonSuccess('Media order payment initiated successfully', [
+            'media_order' => $mediaOrder->fresh(['store', 'items.resource']),
+            'payment_required' => true,
+            'payment_id' => $payment->id,
+            'merchant_transaction_id' => $payment->merchant_transaction_id,
+            'amount' => $payment->amount,
+            'payment_url' => $result['payment_url'],
+        ], 201);
+    }
+
     public function success(array $data): JsonResponse
     {
         $payment = $this->findPaymentFromCallback($data);
@@ -358,9 +497,31 @@ class AmarPayService
                         'starts_at' => $subscription->starts_at ?: now(),
                     ]);
                 }
+            } elseif ($lockedPayment->status !== 'success' && $lockedPayment->payment_type === self::PAYMENT_TYPE_MEDIA_RESOURCE_ORDER) {
+                $gatewayTransactionId = $data['pg_txnid'] ?? $lockedPayment->gateway_transaction_id;
+
+                $mediaOrder = MediaResourceOrder::whereKey($lockedPayment->media_resource_order_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                $lockedPayment->update([
+                    'status' => 'success',
+                    'gateway_transaction_id' => $gatewayTransactionId,
+                    'gateway_fee' => $data['gateway_fee'] ?? $lockedPayment->gateway_fee ?? 0,
+                    'gateway_response' => $this->appendCallbackData($lockedPayment, $data, $validation),
+                    'paid_at' => $lockedPayment->paid_at ?: now(),
+                ]);
+
+                if ($mediaOrder) {
+                    $mediaOrder->update([
+                        'status' => 'pending_design',
+                        'payment_status' => 'paid',
+                        'paid_at' => $mediaOrder->paid_at ?: now(),
+                    ]);
+                }
             }
 
-            $freshPayment = $lockedPayment->fresh(['order', 'storeSubscription.package', 'store']);
+            $freshPayment = $lockedPayment->fresh(['order', 'storeSubscription.package', 'mediaResourceOrder.items.resource', 'store']);
             if ($lockedPayment->payment_type === self::PAYMENT_TYPE_ORDER) {
                 $freshPayment->paid_orders = Order::whereIn('id', $this->orderIdsForPayment($lockedPayment))->get();
             }
@@ -413,6 +574,18 @@ class AmarPayService
                 ->where('payment_status', '!=', 'paid')
                 ->update([
                     'status' => $subscriptionStatus,
+                    'payment_status' => $paymentStatus,
+                ]);
+        }
+
+        if ($payment->payment_type === self::PAYMENT_TYPE_MEDIA_RESOURCE_ORDER) {
+            $orderStatus = $status === 'failed' ? 'pending_payment' : 'cancelled';
+            $paymentStatus = $status === 'failed' ? 'failed' : 'unpaid';
+
+            MediaResourceOrder::whereKey($payment->media_resource_order_id)
+                ->where('payment_status', '!=', 'paid')
+                ->update([
+                    'status' => $orderStatus,
                     'payment_status' => $paymentStatus,
                 ]);
         }

@@ -35,6 +35,8 @@ use App\Http\Controllers\FirebaseNotificationController;
 use App\Http\Controllers\SubscriptionPackageController;
 use App\Http\Controllers\SellerStoreCategoryController;
 use App\Http\Controllers\SellerStoreProductController;
+use App\Http\Controllers\SellerMediaMarketplaceController;
+use App\Http\Controllers\AdminMediaMarketplaceController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -143,6 +145,39 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
     Route::get('/products', [SellerStoreProductController::class, 'index']);
     Route::put('/products/{storeProductId}', [SellerStoreProductController::class, 'update']);
     Route::delete('/products/{storeProductId}', [SellerStoreProductController::class, 'remove']);
+});
+
+Route::prefix('seller/media-marketplace')->group(function () {
+    Route::get('/categories', [SellerMediaMarketplaceController::class, 'categories']);
+    Route::get('/resources', [SellerMediaMarketplaceController::class, 'resources']);
+    Route::get('/resources/{id}', [SellerMediaMarketplaceController::class, 'resourceDetails']);
+});
+
+Route::prefix('seller/stores/{storeId}/media-orders')->group(function () {
+    Route::post('/', [SellerMediaMarketplaceController::class, 'createOrder']);
+    Route::get('/', [SellerMediaMarketplaceController::class, 'orders']);
+    Route::get('/{orderId}', [SellerMediaMarketplaceController::class, 'orderDetails']);
+    Route::post('/{orderId}/pay', [SellerMediaMarketplaceController::class, 'pay']);
+    Route::post('/{orderId}/revisions', [SellerMediaMarketplaceController::class, 'requestRevision']);
+    Route::post('/{orderId}/approve', [SellerMediaMarketplaceController::class, 'approve']);
+});
+
+Route::prefix('admin/media-marketplace')->group(function () {
+    Route::get('/categories', [AdminMediaMarketplaceController::class, 'categories']);
+    Route::post('/categories', [AdminMediaMarketplaceController::class, 'createCategory']);
+    Route::put('/categories/{id}', [AdminMediaMarketplaceController::class, 'updateCategory']);
+    Route::delete('/categories/{id}', [AdminMediaMarketplaceController::class, 'deleteCategory']);
+
+    Route::get('/resources', [AdminMediaMarketplaceController::class, 'resources']);
+    Route::post('/resources', [AdminMediaMarketplaceController::class, 'createResource']);
+    Route::get('/resources/{id}', [AdminMediaMarketplaceController::class, 'resourceDetails']);
+    Route::put('/resources/{id}', [AdminMediaMarketplaceController::class, 'updateResource']);
+    Route::delete('/resources/{id}', [AdminMediaMarketplaceController::class, 'deleteResource']);
+
+    Route::get('/orders', [AdminMediaMarketplaceController::class, 'orders']);
+    Route::get('/orders/{id}', [AdminMediaMarketplaceController::class, 'orderDetails']);
+    Route::put('/orders/{id}/status', [AdminMediaMarketplaceController::class, 'updateOrderStatus']);
+    Route::post('/orders/{id}/deliverables', [AdminMediaMarketplaceController::class, 'addDeliverable']);
 });
 
 

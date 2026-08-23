@@ -15,6 +15,7 @@ class OnlinePayment extends Model
         'payment_group_id',
         'order_ids',
         'store_subscription_id',
+        'media_resource_order_id',
         'store_id',
         'user_id',
         'gateway',
@@ -34,6 +35,7 @@ class OnlinePayment extends Model
         'gateway_fee' => 'decimal:2',
         'order_ids' => 'array',
         'store_subscription_id' => 'integer',
+        'media_resource_order_id' => 'integer',
         'store_id' => 'integer',
         'gateway_response' => 'array',
         'initiated_at' => 'datetime',
@@ -54,6 +56,11 @@ class OnlinePayment extends Model
     public function storeSubscription()
     {
         return $this->belongsTo(StoreSubscription::class);
+    }
+
+    public function mediaResourceOrder()
+    {
+        return $this->belongsTo(MediaResourceOrder::class);
     }
 
     public function store()

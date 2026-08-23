@@ -51,6 +51,7 @@ class OnlinePaymentController extends Controller
             'order_id' => $payment->order_id ?? null,
             'store_id' => $payment->store_id ?? null,
             'store_subscription_id' => $payment->store_subscription_id ?? null,
+            'media_resource_order_id' => $payment->media_resource_order_id ?? null,
             'amount' => $payment->amount ?? null,
             'merchant_transaction_id' => $payment->merchant_transaction_id ?? $request->input('mer_txnid'),
             'gateway_transaction_id' => $payment->gateway_transaction_id ?? $request->input('pg_txnid'),
