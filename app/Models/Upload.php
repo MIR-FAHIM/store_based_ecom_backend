@@ -17,6 +17,7 @@ class Upload extends Model
         'file_original_name',
         'file_name',
         'user_id',
+        'seller_id',
         'file_size',
         'extension',
         'type',
@@ -28,6 +29,7 @@ class Upload extends Model
      */
     protected $casts = [
         'file_size' => 'integer',
+        'seller_id' => 'integer',
     ];
 
     /**
@@ -58,5 +60,10 @@ class Upload extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function seller()
+    {
+        return $this->belongsTo(User::class, 'seller_id');
     }
 }

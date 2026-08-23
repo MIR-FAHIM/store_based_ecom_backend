@@ -373,4 +373,7 @@ Route::prefix('payments')->group(function () {
     Route::post('/aamarpay/success', [OnlinePaymentController::class, 'success'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/aamarpay/fail', [OnlinePaymentController::class, 'fail'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/aamarpay/cancel', [OnlinePaymentController::class, 'cancel'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::post('/aamarpay/media-order/verify', [OnlinePaymentController::class, 'verifyMediaOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::post('/aamarpay/media-order/fail', [OnlinePaymentController::class, 'failMediaOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::post('/aamarpay/media-order/cancel', [OnlinePaymentController::class, 'cancelMediaOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
 });

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Service\AmarPayService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 
 class OnlinePaymentController extends Controller
 {
@@ -82,6 +83,20 @@ class OnlinePaymentController extends Controller
         ]));
     }
 
+    public function verifyMediaOrder(Request $request): JsonResponse
+    {
+        return $this->aamarPayService->success($request->all());
+    }
+
+    public function failMediaOrder(Request $request): JsonResponse
+    {
+        return $this->aamarPayService->fail($request->all());
+    }
+
+    public function cancelMediaOrder(Request $request): JsonResponse
+    {
+        return $this->aamarPayService->cancel($request->all());
+    }
     private function frontendPaymentUrl(string $pathConfigKey, array $query = []): string
     {
         $frontendUrl = rtrim(config('services.frontend.url') ?: config('app.url'), '/');

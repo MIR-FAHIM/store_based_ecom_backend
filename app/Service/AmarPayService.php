@@ -354,9 +354,9 @@ class AmarPayService
         $payload = [
             'store_id' => config('services.aamarpay.store_id'),
             'tran_id' => $merchantTransactionId,
-            'success_url' => $this->callbackUrl('success'),
-            'fail_url' => $this->callbackUrl('fail'),
-            'cancel_url' => $this->callbackUrl('cancel'),
+            'success_url' => $this->mediaOrderFrontendPaymentUrl($mediaOrder, 'payment-success'),
+            'fail_url' => $this->mediaOrderFrontendPaymentUrl($mediaOrder, 'payment-failed'),
+            'cancel_url' => $this->mediaOrderFrontendPaymentUrl($mediaOrder, 'payment-cancelled'),
             'amount' => number_format($amount, 2, '.', ''),
             'currency' => $mediaOrder->currency ?: 'BDT',
             'signature_key' => config('services.aamarpay.signature_key'),
@@ -770,6 +770,16 @@ class AmarPayService
     {
         return config("services.aamarpay.{$type}_url")
             ?: url("/api/payments/aamarpay/{$type}");
+    }
+
+    private function mediaOrderFrontendPaymentUrl(MediaResourceOrder $mediaOrder, string $statusPath): string
+    {
+        $frontendUrl = rtrim(config('services.frontend.url') ?: config('app.url'), '/');
+
+        return $frontendUrl
+            . '/seller/stores/' . $mediaOrder->store_id
+            . '/media-orders/' . $mediaOrder->id
+            . '/' . ltrim($statusPath, '/');
     }
 
     private function jsonSuccess(string $message, mixed $data = null, int $code = 200): JsonResponse
