@@ -333,16 +333,28 @@ class OrderController extends Controller
         try {
             $perPage = (int) $request->get('per_page', 20);
 
-            $orders = Order::where('user_id', $userId)->with(['userAddress.district', 'userAddress.division'])
-                ->latest()
-                ->paginate($perPage);
+            $query = Order::where('user_id', $userId)
+                ->with(['items.shop', 'userAddress.district', 'userAddress.division']);
+
+            if ($request->filled('store_slug')) {
+                $store = Shops::where('slug', $request->query('store_slug'))
+                    ->where('status', 'active')
+                    ->first();
+
+                if (!$store) {
+                    return $this->failed('Store not found or inactive', null, 404);
+                }
+
+                $query->whereHas('items', fn ($itemQuery) => $itemQuery->where('shop_id', $store->id));
+            }
+
+            $orders = $query->latest()->paginate($perPage);
 
             return $this->success('Orders fetched successfully', $orders);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
     }
-
     public function allOrders(Request $request)
     {
         try {

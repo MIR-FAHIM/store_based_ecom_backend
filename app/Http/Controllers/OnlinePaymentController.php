@@ -18,6 +18,7 @@ class OnlinePaymentController extends Controller
         $validated = $request->validate([
             'order_id' => ['nullable', 'integer', 'exists:orders,id', 'required_without:payment_group_id'],
             'payment_group_id' => ['nullable', 'string', 'max:64', 'required_without:order_id'],
+            'store_slug' => ['nullable', 'string', 'max:255'],
         ]);
 
         $user = $request->attributes->get('api_user');
@@ -25,7 +26,8 @@ class OnlinePaymentController extends Controller
         return $this->aamarPayService->initiatePayment(
             isset($validated['order_id']) ? (int) $validated['order_id'] : null,
             $user,
-            $validated['payment_group_id'] ?? null
+            $validated['payment_group_id'] ?? null,
+            $validated['store_slug'] ?? null
         );
     }
 
@@ -94,6 +96,20 @@ class OnlinePaymentController extends Controller
     }
 
     public function cancelMediaOrder(Request $request): JsonResponse
+    {
+        return $this->aamarPayService->cancel($request->all());
+    }
+    public function verifyStoreOrder(Request $request): JsonResponse
+    {
+        return $this->aamarPayService->success($request->all());
+    }
+
+    public function failStoreOrder(Request $request): JsonResponse
+    {
+        return $this->aamarPayService->fail($request->all());
+    }
+
+    public function cancelStoreOrder(Request $request): JsonResponse
     {
         return $this->aamarPayService->cancel($request->all());
     }

@@ -79,7 +79,7 @@ Route::prefix('public/stores')->group(function () {
 
 Route::prefix('brands')->group(function () {
     Route::post('/create', [BrandController::class, 'createBrand']);
-    Route::get('/list', [BrandController::class, 'listBrands']);
+    Route::get('/list', [BrandController::class, 'listBrands'])->withoutMiddleware('token');
     Route::get('/details/{id}', [BrandController::class, 'getBrandDetails']);
     Route::put('/update/{id}', [BrandController::class, 'updateBrand']);
     Route::delete('/delete/{id}', [BrandController::class, 'deleteBrand']);
@@ -376,4 +376,7 @@ Route::prefix('payments')->group(function () {
     Route::post('/aamarpay/media-order/verify', [OnlinePaymentController::class, 'verifyMediaOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/aamarpay/media-order/fail', [OnlinePaymentController::class, 'failMediaOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/aamarpay/media-order/cancel', [OnlinePaymentController::class, 'cancelMediaOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::post('/aamarpay/store-order/verify', [OnlinePaymentController::class, 'verifyStoreOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::post('/aamarpay/store-order/fail', [OnlinePaymentController::class, 'failStoreOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::post('/aamarpay/store-order/cancel', [OnlinePaymentController::class, 'cancelStoreOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
 });

@@ -989,6 +989,17 @@ class ProductController extends Controller
                 return $this->failed('Brand not found', null, 404);
             }
 
+            if ($request->filled('store_slug')) {
+                $request->merge(['brand_id' => (int) $brand->id]);
+                $products = $this->publicStoreProductPaginator($request, null, 24);
+
+                if (!$products) {
+                    return $this->failed('Store not found or inactive', null, 404);
+                }
+
+                return $this->success('Store brand products fetched successfully', $products);
+            }
+
             $query = Product::query()->fromActiveShop()->with([
                 'primaryImage',
                 'images',
@@ -1026,7 +1037,6 @@ class ProductController extends Controller
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
     }
-
     public function listProductsForAdmin(Request $request)
     {
         try {

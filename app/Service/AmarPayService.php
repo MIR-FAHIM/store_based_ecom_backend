@@ -21,7 +21,7 @@ class AmarPayService
     private const PAYMENT_TYPE_STORE_SUBSCRIPTION = 'store_subscription';
     private const PAYMENT_TYPE_MEDIA_RESOURCE_ORDER = 'media_resource_order';
 
-    public function initiatePayment(?int $orderId, ?User $authenticatedUser = null, ?string $paymentGroupId = null): JsonResponse
+    public function initiatePayment(?int $orderId, ?User $authenticatedUser = null, ?string $paymentGroupId = null, ?string $storeSlug = null): JsonResponse
     {
         $configError = $this->validateConfig();
         if ($configError) {
@@ -42,6 +42,28 @@ class AmarPayService
                 'order_user_ids' => $orders->pluck('user_id')->unique()->values(),
                 'authenticated_user_id' => (int) $authenticatedUser->id,
             ], 403);
+        }
+
+        $store = null;
+        if ($storeSlug) {
+            $store = Shops::where('slug', $storeSlug)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$store) {
+                return $this->jsonFailed('Store not found or inactive', null, 404);
+            }
+
+            $invalidOrder = $orders->first(function (Order $order) use ($store) {
+                return !$order->items()->where('shop_id', $store->id)->exists();
+            });
+
+            if ($invalidOrder) {
+                return $this->jsonFailed('Order does not belong to this store', [
+                    'order_id' => (int) $invalidOrder->id,
+                    'store_id' => (int) $store->id,
+                ], 403);
+            }
         }
 
         $unpaidOrders = $orders
@@ -67,6 +89,7 @@ class AmarPayService
             'order_id' => $primaryOrder->id,
             'payment_group_id' => $paymentGroupId,
             'order_ids' => $orderIds,
+            'store_id' => $store?->id,
             'user_id' => $primaryOrder->user_id,
             'gateway' => 'aamarpay',
             'merchant_transaction_id' => $merchantTransactionId,
@@ -76,12 +99,16 @@ class AmarPayService
             'initiated_at' => now(),
         ]);
 
+        $successUrl = $store ? $this->storeFrontendPaymentUrl($store, 'payment-success') : $this->callbackUrl('success');
+        $failUrl = $store ? $this->storeFrontendPaymentUrl($store, 'payment-failed') : $this->callbackUrl('fail');
+        $cancelUrl = $store ? $this->storeFrontendPaymentUrl($store, 'payment-cancelled') : $this->callbackUrl('cancel');
+
         $payload = [
             'store_id' => config('services.aamarpay.store_id'),
             'tran_id' => $merchantTransactionId,
-            'success_url' => $this->callbackUrl('success'),
-            'fail_url' => $this->callbackUrl('fail'),
-            'cancel_url' => $this->callbackUrl('cancel'),
+            'success_url' => $successUrl,
+            'fail_url' => $failUrl,
+            'cancel_url' => $cancelUrl,
             'amount' => number_format($amount, 2, '.', ''),
             'currency' => 'BDT',
             'signature_key' => config('services.aamarpay.signature_key'),
@@ -98,6 +125,7 @@ class AmarPayService
             'opt_a' => $paymentGroupId,
             'opt_b' => implode(',', $orderIds),
             'opt_c' => (string) $unpaidOrders->count(),
+            'opt_d' => $store?->slug,
             'type' => 'json',
         ];
         $payload = array_filter($payload, fn ($value) => $value !== null && $value !== '');
@@ -139,12 +167,13 @@ class AmarPayService
             'payment_id' => $payment->id,
             'payment_group_id' => $payment->payment_group_id,
             'order_ids' => $payment->order_ids,
+            'store_id' => $payment->store_id,
+            'store_slug' => $store?->slug,
             'amount' => $payment->amount,
             'merchant_transaction_id' => $payment->merchant_transaction_id,
             'payment_url' => $result['payment_url'],
         ]);
     }
-
     public function initiateStoreSubscriptionPayment(StoreSubscription $subscription, ?User $authenticatedUser = null): JsonResponse
     {
         $configError = $this->validateConfig();
@@ -772,6 +801,14 @@ class AmarPayService
             ?: url("/api/payments/aamarpay/{$type}");
     }
 
+    private function storeFrontendPaymentUrl(Shops $store, string $statusPath): string
+    {
+        $frontendUrl = rtrim(config('services.frontend.url') ?: config('app.url'), '/');
+
+        return $frontendUrl
+            . '/store/' . $store->slug
+            . '/' . ltrim($statusPath, '/');
+    }
     private function mediaOrderFrontendPaymentUrl(MediaResourceOrder $mediaOrder, string $statusPath): string
     {
         $frontendUrl = rtrim(config('services.frontend.url') ?: config('app.url'), '/');

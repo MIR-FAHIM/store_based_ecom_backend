@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Brand;
+use App\Models\Shops;
+use App\Models\StoreCategory;
+use App\Models\StoreProduct;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -24,6 +27,17 @@ class BrandController extends Controller
             'message' => $message,
             'errors' => $errors
         ], $code);
+    }
+
+    private function resolveActiveStoreFromSlug(Request $request): ?Shops
+    {
+        if (!$request->filled('store_slug')) {
+            return null;
+        }
+
+        return Shops::where('slug', $request->query('store_slug'))
+            ->where('status', 'active')
+            ->first();
     }
 
     /**
@@ -50,11 +64,59 @@ class BrandController extends Controller
     }
 
     /**
-     * GET /brands/list?status=&per_page=&all=1
+     * GET /brands/list?status=&per_page=&all=1&store_slug=
      */
     public function listBrands(Request $request)
     {
         try {
+            if ($request->filled('store_slug')) {
+                $store = $this->resolveActiveStoreFromSlug($request);
+
+                if (!$store) {
+                    return $this->failed('Store not found or inactive', null, 404);
+                }
+
+                $storeProductQuery = StoreProduct::where('store_id', $store->id)
+                    ->where('is_active', true)
+                    ->whereHas('product', function ($productQuery) {
+                        $productQuery->where('approved', 1)
+                            ->whereNotNull('brand_id')
+                            ->whereHas('brand', fn ($brandQuery) => $brandQuery->where('status', 'active'));
+                    });
+
+                $activeCategoryIds = StoreCategory::where('store_id', $store->id)
+                    ->where('is_active', true)
+                    ->pluck('category_id');
+
+                if ($activeCategoryIds->isNotEmpty()) {
+                    $storeProductQuery->whereHas('product', fn ($productQuery) => $productQuery->whereIn('category_id', $activeCategoryIds));
+                }
+
+                $brandIds = $storeProductQuery
+                    ->with('product:id,brand_id')
+                    ->get()
+                    ->pluck('product.brand_id')
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $query = Brand::with('logo')->whereIn('id', $brandIds);
+
+                if ($request->filled('status')) {
+                    $query->where('status', $request->status);
+                } else {
+                    $query->where('status', 'active');
+                }
+
+                $query->orderBy('name');
+
+                if ($request->filled('all') && (int) $request->get('all') === 1) {
+                    return $this->success('Store brands fetched successfully', $query->get());
+                }
+
+                return $this->success('Store brands fetched successfully', $query->paginate((int) $request->get('per_page', 20)));
+            }
+
             $query = Brand::query();
 
             if ($request->filled('status')) {
@@ -139,11 +201,6 @@ class BrandController extends Controller
             if (!$brand) {
                 return $this->failed('Brand not found', null, 404);
             }
-
-            // If you want to prevent deleting brands that still have products:
-            // if ($brand->products()->exists()) {
-            //     return $this->failed('Cannot delete: brand has products', null, 409);
-            // }
 
             $brand->delete();
 

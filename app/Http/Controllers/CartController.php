@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
+use App\Models\Shops;
+use App\Models\StoreProduct;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -28,13 +30,73 @@ class CartController extends Controller
         ], $code);
     }
 
+    private function resolveActiveStoreFromSlug(Request $request): ?Shops
+    {
+        if (!$request->filled('store_slug')) {
+            return null;
+        }
+
+        return Shops::where('slug', $request->query('store_slug'))
+            ->where('status', 'active')
+            ->first();
+    }
+
+    private function getFinalSalePriceFromValues(float $price, ?float $discount, ?string $discountType): float
+    {
+        if (!$discount || !$discountType) {
+            return round($price, 2);
+        }
+
+        if ($discountType === 'percent') {
+            return round(max(0, $price - ($price * ($discount / 100))), 2);
+        }
+
+        return round(max(0, $price - $discount), 2);
+    }
+
+    private function loadCartRelations(Cart $cart): Cart
+    {
+        return $cart->load([
+            'items.product.primaryImage',
+            'items.shop',
+            'items.product.productDiscount',
+            'items.productAttribute.attribute',
+            'items.productAttribute.value'
+        ]);
+    }
+
+    private function scopeCartToStore(Cart $cart, Shops $store): Cart
+    {
+        $this->loadCartRelations($cart);
+
+        $items = $cart->items->filter(fn ($item) => (int) $item->shop_id === (int) $store->id)->values();
+        $cart->setRelation('items', $items);
+        $cart->total_items = $items->sum(fn ($item) => (int) ($item->qty ?? 0));
+        $cart->subtotal = round($items->sum(fn ($item) => (float) ($item->line_total ?? 0)), 2);
+        $cart->store_id = (int) $store->id;
+        $cart->store_slug = $store->slug;
+
+        return $cart;
+    }
+
+    private function itemBelongsToStore(CartItem $item, Shops $store): bool
+    {
+        return (int) $item->shop_id === (int) $store->id;
+    }
+
     /**
      * Get active cart for a user, or create one
-     * GET /carts/active/{userId}
+     * GET /carts/active/{userId}?store_slug=
      */
-    public function getActiveCart($userId)
+    public function getActiveCart(Request $request, $userId)
     {
         try {
+            $store = $this->resolveActiveStoreFromSlug($request);
+
+            if ($request->filled('store_slug') && !$store) {
+                return $this->failed('Store not found or inactive', null, 404);
+            }
+
             $cart = Cart::where('user_id', $userId)
                 ->where('status', 'active')
                 ->latest()
@@ -49,8 +111,7 @@ class CartController extends Controller
                 ]);
             }
 
-            $cart->load(['items.product.primaryImage',  'items.shop', 
-            'items.product.productDiscount', 'items.productAttribute.attribute', 'items.productAttribute.value']);
+            $cart = $store ? $this->scopeCartToStore($cart, $store) : $this->loadCartRelations($cart);
 
             return $this->success('Active cart fetched successfully', $cart);
         } catch (\Throwable $e) {
@@ -72,21 +133,36 @@ class CartController extends Controller
                 'qty' => ['required', 'integer', 'min:1'],
             ]);
 
+            $store = $this->resolveActiveStoreFromSlug($request);
+
+            if ($request->filled('store_slug') && !$store) {
+                return $this->failed('Store not found or inactive', null, 404);
+            }
+
             $product = Product::find($validated['product_id']);
             if (!$product) {
                 return $this->failed('Product not found', null, 404);
             }
 
-            // Decide the unit price snapshot
-            $unitPrice = null;
-            if (!is_null($product->unit_price) && $product->unit_price > 0) {
-                $unitPrice = (float) $product->unit_price;
-            } else {
-                $unitPrice = !is_null($product->unit_price) ? (float) $product->unit_price : null;
-            }
+            $shopId = $product->shop_id ?? null;
+            $unitPrice = !is_null($product->unit_price) ? (float) $product->unit_price : null;
 
-            // Apply product-level discount from Product model fields (ignore start/end date)
-            if (!is_null($unitPrice) && !is_null($product->discount) && $product->discount > 0) {
+            if ($store) {
+                $storeProduct = StoreProduct::where('store_id', $store->id)
+                    ->where('product_id', $product->id)
+                    ->where('is_active', true)
+                    ->first();
+
+                if (!$storeProduct) {
+                    return $this->failed('Product does not belong to this store', null, 404);
+                }
+
+                $shopId = $store->id;
+                $price = (float) ($storeProduct->price ?? $product->unit_price ?? 0);
+                $discount = $storeProduct->discount !== null ? (float) $storeProduct->discount : ($product->discount !== null ? (float) $product->discount : null);
+                $discountType = $storeProduct->discount_type ?? $product->discount_type ?? null;
+                $unitPrice = $this->getFinalSalePriceFromValues($price, $discount, $discountType);
+            } elseif (!is_null($unitPrice) && !is_null($product->discount) && $product->discount > 0) {
                 if ($product->discount_type === 'percent') {
                     $unitPrice = $unitPrice - ($unitPrice * ($product->discount / 100));
                 } elseif ($product->discount_type === 'amount') {
@@ -111,11 +187,15 @@ class CartController extends Controller
                 ]);
             }
 
-            // Merge: same cart + same product = increment qty
-            $item = CartItem::where('cart_id', $cart->id)
+            $itemQuery = CartItem::where('cart_id', $cart->id)
                 ->where('product_id', $product->id)
-                ->where('attribute_id', $request->input('attribute_id'))
-                ->first();
+                ->where('attribute_id', $request->input('attribute_id'));
+
+            if ($store) {
+                $itemQuery->where('shop_id', $store->id);
+            }
+
+            $item = $itemQuery->first();
 
             if ($item) {
                 $newQty = ((int) $item->qty) + (int) $validated['qty'];
@@ -129,7 +209,7 @@ class CartController extends Controller
                     'cart_id' => $cart->id,
                     'product_id' => $product->id,
                     'attribute_id' => $request->input('attribute_id'),
-                    'shop_id' => $product->shop_id ?? null,
+                    'shop_id' => $shopId,
                     'qty' => (int) $validated['qty'],
                     'unit_price' => $unitPrice,
                     'line_total' => ($unitPrice !== null) ? round(((int) $validated['qty']) * $unitPrice, 2) : null,
@@ -141,7 +221,8 @@ class CartController extends Controller
 
             DB::commit();
 
-            $cart = Cart::with(['items.product', 'items.shop'])->find($cart->id);
+            $cart = Cart::find($cart->id);
+            $cart = $store ? $this->scopeCartToStore($cart, $store) : $cart->load(['items.product', 'items.shop']);
 
             return $this->success('Item added to cart successfully', [
                 'cart' => $cart,
@@ -158,8 +239,7 @@ class CartController extends Controller
 
     /**
      * Update cart item qty
-     * PUT /carts/items/update/{itemId}
-     * Body: qty
+     * PUT /carts/items/update/{itemId}?qty=&store_slug=
      */
     public function updateCartItemQty(Request $request, $itemId)
     {
@@ -168,9 +248,19 @@ class CartController extends Controller
                 'qty' => ['required', 'integer', 'min:0'],
             ]);
 
+            $store = $this->resolveActiveStoreFromSlug($request);
+
+            if ($request->filled('store_slug') && !$store) {
+                return $this->failed('Store not found or inactive', null, 404);
+            }
+
             $item = CartItem::find($itemId);
             if (!$item) {
                 return $this->failed('Cart item not found', null, 404);
+            }
+
+            if ($store && !$this->itemBelongsToStore($item, $store)) {
+                return $this->failed('Cart item does not belong to this store', null, 404);
             }
 
             DB::beginTransaction();
@@ -182,7 +272,8 @@ class CartController extends Controller
 
                 DB::commit();
 
-                $cart = Cart::with(['items.product', 'items.shop'])->find($cartId);
+                $cart = Cart::find($cartId);
+                $cart = $store ? $this->scopeCartToStore($cart, $store) : $cart->load(['items.product', 'items.shop']);
                 return $this->success('Item removed (qty=0) and cart updated', $cart);
             }
 
@@ -196,7 +287,8 @@ class CartController extends Controller
 
             DB::commit();
 
-            $cart = Cart::with(['items.product', 'items.shop'])->find($item->cart_id);
+            $cart = Cart::find($item->cart_id);
+            $cart = $store ? $this->scopeCartToStore($cart, $store) : $cart->load(['items.product', 'items.shop']);
             return $this->success('Cart item updated successfully', $cart);
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
