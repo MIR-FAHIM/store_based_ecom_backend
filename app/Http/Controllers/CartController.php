@@ -9,6 +9,7 @@ use App\Models\Shops;
 use App\Models\StoreProduct;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class CartController extends Controller
 {
@@ -36,7 +37,7 @@ class CartController extends Controller
             return null;
         }
 
-        return Shops::where('slug', $request->query('store_slug'))
+        return Shops::where('slug', $request->input('store_slug'))
             ->where('status', 'active')
             ->first();
     }
@@ -58,6 +59,7 @@ class CartController extends Controller
     {
         return $cart->load([
             'items.product.primaryImage',
+            'items.storeProduct',
             'items.shop',
             'items.product.productDiscount',
             'items.productAttribute.attribute',
@@ -130,6 +132,7 @@ class CartController extends Controller
             $validated = $request->validate([
                 'user_id' => ['required', 'integer', 'exists:users,id'],
                 'product_id' => ['required', 'integer', 'exists:products,id'],
+                'store_product_id' => ['nullable', 'integer'],
                 'qty' => ['required', 'integer', 'min:1'],
             ]);
 
@@ -144,19 +147,32 @@ class CartController extends Controller
                 return $this->failed('Product not found', null, 404);
             }
 
+            $storeProduct = null;
+            $storeProductId = null;
             $shopId = $product->shop_id ?? null;
             $unitPrice = !is_null($product->unit_price) ? (float) $product->unit_price : null;
 
             if ($store) {
-                $storeProduct = StoreProduct::where('store_id', $store->id)
-                    ->where('product_id', $product->id)
-                    ->where('is_active', true)
-                    ->first();
+                $storeProductQuery = StoreProduct::where('store_id', $store->id)
+                    ->where('is_active', true);
+
+                if (!empty($validated['store_product_id'])) {
+                    $storeProductQuery->whereKey((int) $validated['store_product_id']);
+                } else {
+                    $storeProductQuery->where('product_id', $product->id);
+                }
+
+                $storeProduct = $storeProductQuery->first();
 
                 if (!$storeProduct) {
                     return $this->failed('Product does not belong to this store', null, 404);
                 }
 
+                if ((int) $storeProduct->product_id !== (int) $product->id) {
+                    return $this->failed('Product does not match the selected store product', null, 422);
+                }
+
+                $storeProductId = (int) $storeProduct->id;
                 $shopId = $store->id;
                 $price = (float) ($storeProduct->price ?? $product->unit_price ?? 0);
                 $discount = $storeProduct->discount !== null ? (float) $storeProduct->discount : ($product->discount !== null ? (float) $product->discount : null);
@@ -193,6 +209,10 @@ class CartController extends Controller
 
             if ($store) {
                 $itemQuery->where('shop_id', $store->id);
+
+                if ($storeProductId && Schema::hasColumn('cart_items', 'store_product_id')) {
+                    $itemQuery->where('store_product_id', $storeProductId);
+                }
             }
 
             $item = $itemQuery->first();
@@ -200,12 +220,15 @@ class CartController extends Controller
             if ($item) {
                 $newQty = ((int) $item->qty) + (int) $validated['qty'];
                 $item->qty = $newQty;
+                if ($storeProductId && Schema::hasColumn('cart_items', 'store_product_id')) {
+                    $item->store_product_id = $storeProductId;
+                }
                 $item->unit_price = $unitPrice;
                 $item->line_total = ($unitPrice !== null) ? round($newQty * $unitPrice, 2) : null;
                 $item->status = $item->status ?? 'active';
                 $item->save();
             } else {
-                $item = CartItem::create([
+                $payload = [
                     'cart_id' => $cart->id,
                     'product_id' => $product->id,
                     'attribute_id' => $request->input('attribute_id'),
@@ -214,7 +237,13 @@ class CartController extends Controller
                     'unit_price' => $unitPrice,
                     'line_total' => ($unitPrice !== null) ? round(((int) $validated['qty']) * $unitPrice, 2) : null,
                     'status' => 'active',
-                ]);
+                ];
+
+                if ($storeProductId && Schema::hasColumn('cart_items', 'store_product_id')) {
+                    $payload['store_product_id'] = $storeProductId;
+                }
+
+                $item = CartItem::create($payload);
             }
 
             $this->recalculateCart($cart->id);

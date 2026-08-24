@@ -12,6 +12,7 @@ class CartItem extends Model
     protected $fillable = [
         'cart_id',
         'product_id',
+        'store_product_id',
         'shop_id',
         'qty',
         'unit_price',
@@ -21,6 +22,7 @@ class CartItem extends Model
     ];
 
     protected $casts = [
+        'store_product_id' => 'integer',
         'qty' => 'integer',
         'unit_price' => 'float',
         'line_total' => 'float',
@@ -35,6 +37,12 @@ class CartItem extends Model
     {
         return $this->belongsTo(Product::class, 'product_id');
     }
+
+    public function storeProduct()
+    {
+        return $this->belongsTo(StoreProduct::class, 'store_product_id');
+    }
+
     public function productAttribute()
     {
         return $this->belongsTo(ProductAttribute::class, 'attribute_id');
@@ -42,7 +50,7 @@ class CartItem extends Model
 
     public function shop()
     {
-        // Your shop model is named "Shops" (plural)
         return $this->belongsTo(Shops::class, 'shop_id');
     }
 }
+
