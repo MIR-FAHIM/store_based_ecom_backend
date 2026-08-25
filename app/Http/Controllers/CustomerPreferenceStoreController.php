@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\CustomerPreferenceStore;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class CustomerPreferenceStoreController extends Controller
@@ -139,8 +141,13 @@ class CustomerPreferenceStoreController extends Controller
             $authUser = $request->attributes->get('api_user');
 
             $validated = $request->validate([
-                'customer_user_id' => ['required', 'integer', 'exists:users,id'],
+                'customer_user_id' => ['nullable', 'integer', 'exists:users,id'],
                 'seller_id' => ['nullable', 'integer', 'exists:users,id'],
+                'name' => ['nullable', 'string', 'max:255'],
+                'email' => ['nullable', 'email', 'max:255'],
+                'phone' => ['nullable', 'string', 'max:50'],
+                'address' => ['nullable', 'string', 'max:1000'],
+                'password' => ['nullable', 'string', 'min:6'],
             ]);
 
             $sellerId = (int) ($validated['seller_id'] ?? $authUser?->id);
@@ -153,14 +160,21 @@ class CustomerPreferenceStoreController extends Controller
                 return $this->failed('You cannot add customer preference for another seller', null, 403);
             }
 
-            $typeError = $this->assertUserTypes((int) $validated['customer_user_id'], $sellerId);
+            $customer = $this->resolveOrCreateCustomer($validated);
+            if (!$customer) {
+                return $this->failed('customer_user_id or customer information is required', [
+                    'customer_user_id' => ['Provide customer_user_id, or provide at least name, phone, or email to create a customer.'],
+                ], 422);
+            }
+
+            $typeError = $this->assertUserTypes((int) $customer->id, $sellerId);
             if ($typeError) {
                 return $this->failed($typeError['message'], null, $typeError['code']);
             }
 
             $preference = CustomerPreferenceStore::updateOrCreate(
                 [
-                    'customer_user_id' => (int) $validated['customer_user_id'],
+                    'customer_user_id' => (int) $customer->id,
                     'seller_id' => $sellerId,
                 ],
                 [
@@ -170,12 +184,56 @@ class CustomerPreferenceStoreController extends Controller
                 ]
             )->load(['customer', 'seller']);
 
-            return $this->success('Customer preference added successfully', $preference, 201);
+            return $this->success('Customer preference added successfully', [
+                'customer' => $customer->fresh(),
+                'preference' => $preference,
+            ], 201);
         } catch (ValidationException $e) {
             return $this->failed('Validation failed', $e->errors(), 422);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    private function resolveOrCreateCustomer(array $validated): ?User
+    {
+        if (!empty($validated['customer_user_id'])) {
+            return User::find((int) $validated['customer_user_id']);
+        }
+
+        $query = User::query();
+        $hasLookup = false;
+
+        if (!empty($validated['email'])) {
+            $query->where('email', $validated['email']);
+            $hasLookup = true;
+        }
+
+        if (!empty($validated['phone'])) {
+            $method = $hasLookup ? 'orWhere' : 'where';
+            $query->{$method}('phone', $validated['phone']);
+            $hasLookup = true;
+        }
+
+        if ($hasLookup) {
+            $existing = $query->first();
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        if (empty($validated['name']) && empty($validated['phone']) && empty($validated['email'])) {
+            return null;
+        }
+
+        return User::create([
+            'name' => $validated['name'] ?? $validated['phone'] ?? $validated['email'] ?? 'Customer',
+            'email' => $validated['email'] ?? null,
+            'phone' => $validated['phone'] ?? null,
+            'address' => $validated['address'] ?? null,
+            'password' => Hash::make($validated['password'] ?? Str::random(12)),
+            'user_type' => 'customer',
+        ]);
     }
 
     public function getCustomerBySeller(Request $request, $sellerId = null)
