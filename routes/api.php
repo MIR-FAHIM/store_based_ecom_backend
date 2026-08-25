@@ -37,6 +37,7 @@ use App\Http\Controllers\SellerStoreCategoryController;
 use App\Http\Controllers\SellerStoreProductController;
 use App\Http\Controllers\SellerMediaMarketplaceController;
 use App\Http\Controllers\AdminMediaMarketplaceController;
+use App\Http\Controllers\CustomerPreferenceStoreController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -133,6 +134,13 @@ Route::prefix('stores')->group(function () {
     Route::post('/{storeId}/subscription/subscribe', [SubscriptionPackageController::class, 'subscribe']);
 });
 
+Route::prefix('customer-preferences-store')->group(function () {
+    Route::post('/add-seller-preference', [CustomerPreferenceStoreController::class, 'addSellerPreference']);
+    Route::post('/add-customer-preference', [CustomerPreferenceStoreController::class, 'addCustomerPreference']);
+    Route::get('/customers-by-seller/{sellerId?}', [CustomerPreferenceStoreController::class, 'getCustomerBySeller']);
+    Route::get('/sellers-by-customer/{customerUserId?}', [CustomerPreferenceStoreController::class, 'getSellerByCustomer']);
+    Route::delete('/remove', [CustomerPreferenceStoreController::class, 'removePreference']);
+});
 Route::prefix('seller/stores/{storeId}/categories')->group(function () {
     Route::get('/marketplace', [SellerStoreCategoryController::class, 'marketplace']);
     Route::post('/toggle', [SellerStoreCategoryController::class, 'toggle']);
