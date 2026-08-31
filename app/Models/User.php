@@ -89,4 +89,9 @@ class User extends Model
     {
         return $this->hasMany(ApiToken::class);
     }
+
+    public function shops()
+    {
+        return $this->hasMany(Shops::class, 'user_id');
+    }
 }

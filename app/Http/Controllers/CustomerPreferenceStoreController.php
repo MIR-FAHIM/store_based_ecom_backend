@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CustomerPreferenceStore;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -90,6 +91,35 @@ class CustomerPreferenceStoreController extends Controller
         return null;
     }
 
+    /**
+     * Activate one customer/seller preference and deactivate the customer's
+     * other preferences atomically.
+     */
+    private function activatePreference(int $customerUserId, int $sellerId, ?int $addedBy, string $addedByType): CustomerPreferenceStore
+    {
+        return DB::transaction(function () use ($customerUserId, $sellerId, $addedBy, $addedByType) {
+            CustomerPreferenceStore::where('customer_user_id', $customerUserId)
+                ->lockForUpdate()
+                ->get();
+
+            CustomerPreferenceStore::where('customer_user_id', $customerUserId)
+                ->where('seller_id', '!=', $sellerId)
+                ->update(['status' => 'inactive']);
+
+            return CustomerPreferenceStore::updateOrCreate(
+                [
+                    'customer_user_id' => $customerUserId,
+                    'seller_id' => $sellerId,
+                ],
+                [
+                    'added_by' => $addedBy,
+                    'added_by_type' => $addedByType,
+                    'status' => 'active',
+                ]
+            );
+        });
+    }
+
     public function addSellerPreference(Request $request)
     {
         try {
@@ -115,16 +145,11 @@ class CustomerPreferenceStoreController extends Controller
                 return $this->failed($typeError['message'], null, $typeError['code']);
             }
 
-            $preference = CustomerPreferenceStore::updateOrCreate(
-                [
-                    'customer_user_id' => $customerUserId,
-                    'seller_id' => (int) $validated['seller_id'],
-                ],
-                [
-                    'added_by' => $authUser?->id,
-                    'added_by_type' => $this->isAdminUser($authUser) ? 'admin' : 'customer',
-                    'status' => 'active',
-                ]
+            $preference = $this->activatePreference(
+                $customerUserId,
+                (int) $validated['seller_id'],
+                $authUser?->id,
+                $this->isAdminUser($authUser) ? 'admin' : 'customer'
             )->load(['customer', 'seller']);
 
             return $this->success('Seller preference added successfully', $preference, 201);
@@ -172,16 +197,11 @@ class CustomerPreferenceStoreController extends Controller
                 return $this->failed($typeError['message'], null, $typeError['code']);
             }
 
-            $preference = CustomerPreferenceStore::updateOrCreate(
-                [
-                    'customer_user_id' => (int) $customer->id,
-                    'seller_id' => $sellerId,
-                ],
-                [
-                    'added_by' => $authUser?->id,
-                    'added_by_type' => $this->isAdminUser($authUser) ? 'admin' : 'seller',
-                    'status' => 'active',
-                ]
+            $preference = $this->activatePreference(
+                (int) $customer->id,
+                $sellerId,
+                $authUser?->id,
+                $this->isAdminUser($authUser) ? 'admin' : 'seller'
             )->load(['customer', 'seller']);
 
             return $this->success('Customer preference added successfully', [
@@ -278,13 +298,70 @@ class CustomerPreferenceStoreController extends Controller
             }
 
             $perPage = (int) $request->get('per_page', 20);
-            $preferences = CustomerPreferenceStore::with(['seller'])
+            $preferences = CustomerPreferenceStore::with(['seller.shops.logo', 'seller.shops.banner'])
                 ->where('customer_user_id', $customerUserId)
                 ->where('status', 'active')
                 ->latest()
                 ->paginate($perPage);
 
+            foreach ($preferences as $preference) {
+                if ($preference->seller) {
+                    $firstShop = $preference->seller->shops->first();
+                    $preference->seller->setRelation('shop', $firstShop);
+                    $preference->seller->unsetRelation('shops');
+                }
+            }
+
             return $this->success('Customer preferred sellers fetched successfully', $preferences);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function setActivePreference(Request $request)
+    {
+        try {
+            $authUser = $request->attributes->get('api_user');
+
+            $validated = $request->validate([
+                'customer_user_id' => ['nullable', 'integer', 'exists:users,id'],
+                'seller_id' => ['required', 'integer', 'exists:users,id'],
+            ]);
+
+            $customerUserId = (int) ($validated['customer_user_id'] ?? $authUser?->id);
+            $sellerId = (int) $validated['seller_id'];
+
+            if (!$customerUserId) {
+                return $this->failed('customer_user_id is required', null, 422);
+            }
+
+            if (!$this->isAdminUser($authUser) && (int) $authUser?->id !== $customerUserId) {
+                return $this->failed('You cannot change another customer active store', null, 403);
+            }
+
+            $typeError = $this->assertUserTypes($customerUserId, $sellerId);
+            if ($typeError) {
+                return $this->failed($typeError['message'], null, $typeError['code']);
+            }
+
+            $preference = CustomerPreferenceStore::where('customer_user_id', $customerUserId)
+                ->where('seller_id', $sellerId)
+                ->first();
+
+            if (!$preference) {
+                return $this->failed('Store preference not found', null, 404);
+            }
+
+            $preference = $this->activatePreference(
+                $customerUserId,
+                $sellerId,
+                $authUser?->id,
+                $this->isAdminUser($authUser) ? 'admin' : 'customer'
+            )->load(['customer', 'seller']);
+
+            return $this->success('Active store updated successfully', $preference);
+        } catch (ValidationException $e) {
+            return $this->failed('Validation failed', $e->errors(), 422);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
