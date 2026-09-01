@@ -140,6 +140,7 @@ Route::prefix('customer-preferences-store')->group(function () {
     Route::get('/customers-by-seller/{sellerId?}', [CustomerPreferenceStoreController::class, 'getCustomerBySeller']);
     Route::get('/sellers-by-customer/{customerUserId?}', [CustomerPreferenceStoreController::class, 'getSellerByCustomer']);
     Route::delete('/remove', [CustomerPreferenceStoreController::class, 'removePreference']);
+    Route::post('/set-active', [CustomerPreferenceStoreController::class, 'setActivePreference']);
 });
 Route::prefix('seller/stores/{storeId}/categories')->group(function () {
     Route::get('/marketplace', [SellerStoreCategoryController::class, 'marketplace']);

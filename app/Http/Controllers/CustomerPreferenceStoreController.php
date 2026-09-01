@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -118,6 +119,32 @@ class CustomerPreferenceStoreController extends Controller
                 ]
             );
         });
+    }
+
+    private function attachSellerShop($preference): void
+    {
+        if (!$preference->seller) {
+            return;
+        }
+
+        $firstShop = $preference->seller->shops->first();
+        $preference->seller->setRelation('shop', $firstShop);
+        $preference->seller->unsetRelation('shops');
+    }
+
+    private function getCustomerPreferredStores(int $customerUserId)
+    {
+        $preferences = CustomerPreferenceStore::with(['seller.shops.logo', 'seller.shops.banner'])
+            ->where('customer_user_id', $customerUserId)
+            ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
+            ->latest()
+            ->get();
+
+        foreach ($preferences as $preference) {
+            $this->attachSellerShop($preference);
+        }
+
+        return $preferences;
     }
 
     public function addSellerPreference(Request $request)
@@ -305,11 +332,7 @@ class CustomerPreferenceStoreController extends Controller
                 ->paginate($perPage);
 
             foreach ($preferences as $preference) {
-                if ($preference->seller) {
-                    $firstShop = $preference->seller->shops->first();
-                    $preference->seller->setRelation('shop', $firstShop);
-                    $preference->seller->unsetRelation('shops');
-                }
+                $this->attachSellerShop($preference);
             }
 
             return $this->success('Customer preferred sellers fetched successfully', $preferences);
@@ -323,45 +346,73 @@ class CustomerPreferenceStoreController extends Controller
         try {
             $authUser = $request->attributes->get('api_user');
 
-            $validated = $request->validate([
-                'customer_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            if (!$authUser) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized',
+                ], 401);
+            }
+
+            if (!$this->isCustomerUser($authUser)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Authenticated user is not a customer.',
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
                 'seller_id' => ['required', 'integer', 'exists:users,id'],
             ]);
 
-            $customerUserId = (int) ($validated['customer_user_id'] ?? $authUser?->id);
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $validator->errors()->first('seller_id') ?: 'Validation failed',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $validated = $validator->validated();
+            $customerUserId = (int) $authUser->id;
             $sellerId = (int) $validated['seller_id'];
-
-            if (!$customerUserId) {
-                return $this->failed('customer_user_id is required', null, 422);
-            }
-
-            if (!$this->isAdminUser($authUser) && (int) $authUser?->id !== $customerUserId) {
-                return $this->failed('You cannot change another customer active store', null, 403);
-            }
 
             $typeError = $this->assertUserTypes($customerUserId, $sellerId);
             if ($typeError) {
-                return $this->failed($typeError['message'], null, $typeError['code']);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $typeError['message'],
+                    'errors' => null,
+                ], $typeError['code']);
             }
 
-            $preference = CustomerPreferenceStore::where('customer_user_id', $customerUserId)
-                ->where('seller_id', $sellerId)
-                ->first();
+            $seller = User::with(['shops.logo', 'shops.banner'])->find($sellerId);
+            $activeShop = $seller?->shops->firstWhere('status', 'active');
 
-            if (!$preference) {
-                return $this->failed('Store preference not found', null, 404);
+            if (!$seller || !$activeShop) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Seller not found or seller has no active shop/store.',
+                    'errors' => null,
+                ], 404);
             }
 
             $preference = $this->activatePreference(
                 $customerUserId,
                 $sellerId,
-                $authUser?->id,
-                $this->isAdminUser($authUser) ? 'admin' : 'customer'
-            )->load(['customer', 'seller']);
+                $authUser->id,
+                'customer'
+            )->load(['seller.shops.logo', 'seller.shops.banner']);
 
-            return $this->success('Active store updated successfully', $preference);
-        } catch (ValidationException $e) {
-            return $this->failed('Validation failed', $e->errors(), 422);
+            $this->attachSellerShop($preference);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Active preferred store updated successfully',
+                'data' => [
+                    'active_store' => $preference,
+                    'preferred_stores' => $this->getCustomerPreferredStores($customerUserId),
+                ],
+            ]);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
