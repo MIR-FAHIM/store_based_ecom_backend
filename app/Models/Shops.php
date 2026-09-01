@@ -16,6 +16,7 @@ class Shops extends Model
         'name',
         'shop_name',
         'slug',
+        'code',
         'description',
         'logo',
         'banner',
@@ -35,6 +36,28 @@ class Shops extends Model
         'lon' => 'float',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (Shops $shop) {
+            if (empty($shop->code)) {
+                $shop->code = static::generateUniqueCode();
+            }
+        });
+    }
+
+    public function setCodeAttribute($value): void
+    {
+        $this->attributes['code'] = $value ? strtoupper(trim($value)) : null;
+    }
+
+    private static function generateUniqueCode(): string
+    {
+        do {
+            $code = (string) random_int(100000, 999999);
+        } while (static::where('code', $code)->exists());
+
+        return $code;
+    }
     public function user()
     {
         return $this->belongsTo(User::class);

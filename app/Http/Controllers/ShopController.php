@@ -28,6 +28,15 @@ class ShopController extends Controller
         ], $code);
     }
 
+    private function generateShopCode(): string
+    {
+        do {
+            $code = (string) random_int(100000, 999999);
+        } while (Shops::where('code', $code)->exists());
+
+        return $code;
+    }
+
     /**
      * POST /shops/create
      * Create shop for a user (typically vendor)
@@ -41,6 +50,7 @@ class ShopController extends Controller
                 'name' => ['nullable', 'string', 'max:255'],
                 'shop_name' => ['nullable', 'string', 'max:255'],
                 'slug' => ['nullable', 'string', 'max:255', 'unique:shops,slug'],
+                'code' => ['nullable', 'string', 'regex:/^\\d{6}$/', 'unique:shops,code'],
                 'description' => ['nullable', 'string'],
 
                 'logo' => ['nullable', 'string', 'max:255'],
@@ -58,6 +68,10 @@ class ShopController extends Controller
 
                 'status' => ['nullable', 'string', 'max:50'], // pending, active, suspended
             ]);
+
+            if (!empty($validated['code'])) {
+                $validated['code'] = strtoupper(trim($validated['code']));
+            }
 
             // Optional: enforce vendor role if user_id is provided 
             //delivery_boy, customer, seller, admin
@@ -83,6 +97,7 @@ class ShopController extends Controller
                 'shop_name' => $validated['shop_name'] ?? null,
                 'name' => $validated['name'] ?? null,
                 'slug' => $validated['slug'] ?? null,
+                'code' => $validated['code'] ?? $this->generateShopCode(),
                 'description' => $validated['description'] ?? null,
 
                 'logo' => $validated['logo'] ?? null,
@@ -141,6 +156,26 @@ class ShopController extends Controller
         }
     }
 
+    /**
+     * GET /shops/find-by-code/{code}
+     */
+    public function findShopByCode($code)
+    {
+        try {
+            $shop = Shops::with('logo', 'banner', 'user')
+                ->where('code', strtoupper(trim($code)))
+                ->where('status', 'active')
+                ->first();
+
+            if (!$shop) {
+                return $this->failed('Shop not found', null, 404);
+            }
+
+            return $this->success('Shop fetched successfully', $shop);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
     /**
      * GET /shops/details/{id}
      */
@@ -233,6 +268,7 @@ class ShopController extends Controller
                 'name' => ['nullable', 'string', 'max:255'],
                 'shop_name' => ['nullable', 'string', 'max:255'],
                 'slug' => ['nullable', 'string', 'max:255', Rule::unique('shops', 'slug')->ignore($shop->id)],
+                'code' => ['nullable', 'string', 'regex:/^\\d{6}$/', Rule::unique('shops', 'code')->ignore($shop->id)],
                 'description' => ['nullable', 'string'],
 
                 'logo' => ['nullable', 'string', 'max:255'],
@@ -250,6 +286,11 @@ class ShopController extends Controller
 
                 'status' => ['nullable', 'string', 'max:50'],
             ]);
+
+            // Normalize shop code before update.
+            if (!empty($validated['code'])) {
+                $validated['code'] = strtoupper(trim($validated['code']));
+            }
 
             // Optional: enforce vendor role if user_id is being updated
             if (array_key_exists('user_id', $validated) && !empty($validated['user_id'])) {

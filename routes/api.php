@@ -122,6 +122,7 @@ Route::prefix('products')->group(function () {
 Route::prefix('shops')->group(function () {
     Route::post('/create', [ShopController::class, 'createShop']);
     Route::get('/list', [ShopController::class, 'listShops'])->withoutMiddleware('token');
+    Route::get('/find-by-code/{code}', [ShopController::class, 'findShopByCode'])->withoutMiddleware('token');
     Route::get('/details/{id}', [ShopController::class, 'getShopDetails'])->withoutMiddleware('token');;
     Route::get('/products/{id}', [ShopController::class, 'getShopProducts'])->withoutMiddleware('token');;
     Route::post('/update/{id}', [ShopController::class, 'updateShop']);
@@ -389,3 +390,4 @@ Route::prefix('payments')->group(function () {
     Route::post('/aamarpay/store-order/fail', [OnlinePaymentController::class, 'failStoreOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/aamarpay/store-order/cancel', [OnlinePaymentController::class, 'cancelStoreOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
 });
+
