@@ -308,13 +308,23 @@ class UserController extends Controller
                 return $this->failed('user_id is required', null, 422);
             }
 
-            $user = User::with(['shops.logo', 'shops.banner'])->find($userId);
+            $user = User::with([
+                'shops.logo',
+                'shops.banner',
+                'shops.currentSubscription.package',
+            ])->find($userId);
 
             if (!$user) {
                 return $this->failed('Seller not found', null, 404);
             }
 
             $firstShop = $user->shops->first();
+
+            if ($firstShop) {
+                $firstShop->setRelation('package', $firstShop->currentSubscription ?? null);
+                $firstShop->unsetRelation('currentSubscription');
+            }
+
             $user->setRelation('shop', $firstShop);
             $user->unsetRelation('shops');
 
