@@ -300,7 +300,7 @@ class CustomerPreferenceStoreController extends Controller
             $perPage = (int) $request->get('per_page', 20);
             $preferences = CustomerPreferenceStore::with(['seller.shops.logo', 'seller.shops.banner'])
                 ->where('customer_user_id', $customerUserId)
-                ->where('status', 'active')
+                
                 ->latest()
                 ->paginate($perPage);
 
