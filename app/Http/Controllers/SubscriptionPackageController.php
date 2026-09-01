@@ -324,7 +324,7 @@ class SubscriptionPackageController extends Controller
                 'ends_at' => $this->calculateEndsAt($startsAt, $billingCycle),
                 'trial_ends_at' => $package->trial_days ? $startsAt->copy()->addDays((int) $package->trial_days) : null,
                 'price' => $package->price,
-                'currency' => $package->currency,
+                'currency' => 'BDT',
                 'billing_cycle' => $billingCycle,
                 'payment_status' => ((float) $package->price > 0) ? 'unpaid' : 'paid',
                 'payment_reference' => null,
