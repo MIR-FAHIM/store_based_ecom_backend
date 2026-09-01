@@ -59,6 +59,25 @@ class AuthController extends Controller
         }
     }
 
+    private function prepareUserForAuthResponse(User $user): User
+    {
+        if ($user->user_type !== 'seller') {
+            return $user;
+        }
+
+        $seller = User::with(['shops.logo', 'shops.banner'])->find($user->id);
+
+        if (!$seller) {
+            return $user;
+        }
+
+        $firstShop = $seller->shops->first();
+        $seller->setRelation('shop', $firstShop);
+        $seller->unsetRelation('shops');
+
+        return $seller;
+    }
+
     /**
      * POST /auth/login
      */
@@ -131,12 +150,106 @@ class AuthController extends Controller
                 $validated['platform'] ?? null
             );
 
+            $userForResponse = $this->prepareUserForAuthResponse($user);
+
             return $this->success('Login successful', [
                 'token' => $created['plain'],
                 'token_type' => 'Bearer',
                 'expires_at' => $created['token']->expires_at,
                 'token_id' => $created['token']->id,
-                'user' => $user,
+                'user' => $userForResponse,
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /auth/login-seller
+     */
+    public function loginSeller(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'email' => ['nullable', 'email', 'required_without:phone'],
+                'phone' => ['nullable', 'string', 'required_without:email'],
+                'password' => ['required', 'string', 'min:6'],
+                'expires_in_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
+                'name' => ['nullable', 'string', 'max:255'],
+                'platform' => ['nullable', 'string', 'max:50'],
+                'fcm_token' => ['nullable', 'string', 'max:300'],
+            ]);
+
+            $user = null;
+
+            if (!empty($validated['email'])) {
+                $user = User::where('email', $validated['email'])->first();
+            } elseif (!empty($validated['phone'])) {
+                $rawPhone = trim($validated['phone']);
+                $digits = preg_replace('/\D+/', '', $rawPhone);
+
+                $local = preg_replace('/^88/', '', $digits);
+                $local = preg_replace('/^0/', '', $local);
+
+                $variants = array_filter(array_unique([
+                    $rawPhone,
+                    $digits,
+                    '+88' . '0' . $local,
+                    '+88' . $local,
+                    '88' . '0' . $local,
+                    '88' . $local,
+                    '0' . $local,
+                    $local,
+                ]));
+
+                $user = User::whereIn('phone', $variants)->first();
+            }
+
+            if (!$user) {
+                return $this->failed('Seller not found', null, 404);
+            }
+
+            if ($user->user_type !== 'seller') {
+                return $this->failed('This account is not a seller account', null, 403);
+            }
+
+            if (!Hash::check($validated['password'], $user->password)) {
+                return $this->failed('Invalid credentials', null, 401);
+            }
+
+            if (!empty($validated['fcm_token'])) {
+                $user->forceFill(['device_token' => $validated['fcm_token']])->save();
+            }
+
+            $scopes = ['basic'];
+            if ($user->role === 'admin') {
+                $scopes[] = 'admin';
+            }
+
+            $days = $validated['expires_in_days'] ?? 30;
+            $name = $validated['name'] ?? 'seller-login-token';
+
+            $created = ApiTokenService::create($user, $scopes, $days, $name);
+            $this->logLoginSuccess(
+                $request,
+                $user,
+                $created['token'],
+                'seller_password',
+                $validated['email'] ?? $validated['phone'] ?? null,
+                $name,
+                $validated['platform'] ?? null
+            );
+
+            $userForResponse = $this->prepareUserForAuthResponse($user);
+
+            return $this->success('Seller login successful', [
+                'token' => $created['plain'],
+                'token_type' => 'Bearer',
+                'expires_at' => $created['token']->expires_at,
+                'token_id' => $created['token']->id,
+                'user' => $userForResponse,
             ], 200);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->failed('Validation failed', $e->errors(), 422);
@@ -235,12 +348,14 @@ class AuthController extends Controller
                 $validated['platform'] ?? null
             );
 
+            $userForResponse = $this->prepareUserForAuthResponse($user);
+
             return $this->success('Login successful', [
                 'token' => $created['plain'],
                 'token_type' => 'Bearer',
                 'expires_at' => $created['token']->expires_at,
                 'token_id' => $created['token']->id,
-                'user' => $user,
+                'user' => $userForResponse,
             ], 200);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->failed('Validation failed', $e->errors(), 422);

@@ -41,6 +41,7 @@ use App\Http\Controllers\CustomerPreferenceStoreController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
+Route::post('/auth/login-seller', [AuthController::class, 'loginSeller'])->withoutMiddleware('token');
 Route::post('/auth/login-otp', [AuthController::class, 'loginWithOtp'])->withoutMiddleware('token');
 Route::post('/auth/logout', [AuthController::class, 'logout']);
 Route::get('/auth/tokens', [AuthController::class, 'listTokens']);
