@@ -54,6 +54,8 @@ Route::prefix('users')->group(function () {
     Route::get('/customers', [UserController::class, 'getCustomers']);
     Route::get('/vendors', [UserController::class, 'getVendors']);
     Route::get('/delivery-men', [UserController::class, 'getDeliveryMan']);
+    Route::get('/seller-profile', [UserController::class, 'getSellerProfile'])->withoutMiddleware('token');
+    Route::get('/seller-profile/{id}', [UserController::class, 'getSellerProfile'])->withoutMiddleware('token');
     Route::get('/details/{id}', [UserController::class, 'getUserDetails']);
     Route::put('/update/{id}', [UserController::class, 'updateUser']);
     Route::patch('/ban/{id}', [UserController::class, 'banUser']);

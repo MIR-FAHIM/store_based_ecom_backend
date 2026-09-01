@@ -299,6 +299,34 @@ class UserController extends Controller
     /**
      * GET /users/details/{id}
      */
+    public function getSellerProfile(Request $request, $id = null)
+    {
+        try {
+            $userId = (int) ($id ?? $request->query('user_id') ?? $request->input('user_id'));
+
+            if (!$userId) {
+                return $this->failed('user_id is required', null, 422);
+            }
+
+            $user = User::with(['shops.logo', 'shops.banner'])->find($userId);
+
+            if (!$user) {
+                return $this->failed('Seller not found', null, 404);
+            }
+
+            $firstShop = $user->shops->first();
+            $user->setRelation('shop', $firstShop);
+            $user->unsetRelation('shops');
+
+            return $this->success('Seller profile fetched successfully', $user);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /users/details/{id}
+     */
     public function getUserDetails($id)
     {
         try {
