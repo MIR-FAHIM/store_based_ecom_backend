@@ -123,18 +123,16 @@ class ChatService
                 'reply_to_message_id' => $payload['reply_to_message_id'] ?? null,
             ]);
 
-            $updates = [
+            $conversation->forceFill([
                 'last_message_id' => $message->id,
                 'last_message_at' => $message->created_at,
-            ];
+            ])->save();
 
             if ($senderType === ConversationMessage::SENDER_CUSTOMER) {
-                $updates['shop_unread_count'] = DB::raw('shop_unread_count + 1');
+                Conversation::whereKey($conversation->id)->increment('shop_unread_count');
             } else {
-                $updates['customer_unread_count'] = DB::raw('customer_unread_count + 1');
+                Conversation::whereKey($conversation->id)->increment('customer_unread_count');
             }
-
-            $conversation->update($updates);
 
             return $message;
         });
@@ -242,11 +240,12 @@ class ChatService
                     'order_id' => $order->id,
                 ]);
 
-                $conversation->update([
+                $conversation->forceFill([
                     'last_message_id' => $message->id,
                     'last_message_at' => $message->created_at,
-                    'customer_unread_count' => DB::raw('customer_unread_count + 1'),
-                ]);
+                ])->save();
+
+                Conversation::whereKey($conversation->id)->increment('customer_unread_count');
 
                 return $message;
             });
