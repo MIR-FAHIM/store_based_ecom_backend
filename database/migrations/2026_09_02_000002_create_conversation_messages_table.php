@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -42,27 +41,38 @@ return new class extends Migration
 
     private function nullableForeignIdColumn(Blueprint $table, string $column, string $referencedTable): void
     {
-        if ($this->referencedIdIsBigInteger($referencedTable)) {
+        $definition = $this->referencedIdDefinition($referencedTable);
+
+        if ($definition['bigint'] && $definition['unsigned']) {
             $table->unsignedBigInteger($column)->nullable();
             return;
         }
 
-        $table->unsignedInteger($column)->nullable();
-    }
-
-    private function referencedIdIsBigInteger(string $table): bool
-    {
-        if (Schema::getConnection()->getDriverName() !== 'mysql') {
-            return true;
+        if ($definition['bigint']) {
+            $table->bigInteger($column)->nullable();
+            return;
         }
 
-        $database = Schema::getConnection()->getDatabaseName();
-        $column = DB::table('information_schema.columns')
-            ->where('table_schema', $database)
-            ->where('table_name', $table)
-            ->where('column_name', 'id')
-            ->value('column_type');
+        if ($definition['unsigned']) {
+            $table->unsignedInteger($column)->nullable();
+            return;
+        }
 
-        return str_contains(strtolower((string) $column), 'bigint');
+        $table->integer($column)->nullable();
+    }
+
+    private function referencedIdDefinition(string $table): array
+    {
+        if (Schema::getConnection()->getDriverName() !== 'mysql') {
+            return ['bigint' => true, 'unsigned' => true];
+        }
+
+        $column = Schema::getConnection()->selectOne("SHOW COLUMNS FROM `{$table}` WHERE Field = 'id'");
+        $type = strtolower((string) ($column->Type ?? 'bigint unsigned'));
+
+        return [
+            'bigint' => str_contains($type, 'bigint'),
+            'unsigned' => str_contains($type, 'unsigned'),
+        ];
     }
 };
