@@ -97,4 +97,9 @@ class Shops extends Model
             ->whereIn('status', ['active', 'pending'])
             ->latestOfMany();
     }
+
+    public function conversations()
+    {
+        return $this->hasMany(Conversation::class, 'shop_id');
+    }
 }

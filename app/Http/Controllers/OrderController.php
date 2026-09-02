@@ -10,6 +10,7 @@ use App\Models\OrderItem;
 use App\Models\Shops;
 use App\Models\ShippingCost;
 use App\Models\User;
+use App\Service\ChatService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -534,6 +535,16 @@ class OrderController extends Controller
             $order->status = $validated['status'];
             $order->save();
 
+            try {
+                app(ChatService::class)->createOrderStatusMessage($order, $validated['status']);
+            } catch (\Throwable $chatException) {
+                Log::warning('Could not create order status chat message', [
+                    'order_id' => $order->id,
+                    'status' => $validated['status'],
+                    'error' => $chatException->getMessage(),
+                ]);
+            }
+
             if ($validated['status'] === 'completed') {
                 // Also update all order items to completed
                 $order->payment_status = 'paid';
@@ -578,6 +589,21 @@ class OrderController extends Controller
 
             $item->status = $validated['status'];
             $item->save();
+
+            try {
+                $item->loadMissing('order');
+                if ($item->order) {
+                    app(ChatService::class)->createOrderStatusMessage($item->order, $validated['status'], $item->shop_id);
+                }
+            } catch (\Throwable $chatException) {
+                Log::warning('Could not create order item status chat message', [
+                    'order_item_id' => $item->id,
+                    'order_id' => $item->order_id,
+                    'shop_id' => $item->shop_id,
+                    'status' => $validated['status'],
+                    'error' => $chatException->getMessage(),
+                ]);
+            }
 
             return $this->success('Order item status updated successfully', $item);
         } catch (\Illuminate\Validation\ValidationException $e) {

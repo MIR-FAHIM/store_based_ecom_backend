@@ -94,4 +94,9 @@ class User extends Model
     {
         return $this->hasMany(Shops::class, 'user_id');
     }
+
+    public function conversations()
+    {
+        return $this->hasMany(Conversation::class, 'customer_id');
+    }
 }

@@ -38,6 +38,7 @@ use App\Http\Controllers\SellerStoreProductController;
 use App\Http\Controllers\SellerMediaMarketplaceController;
 use App\Http\Controllers\AdminMediaMarketplaceController;
 use App\Http\Controllers\CustomerPreferenceStoreController;
+use App\Http\Controllers\ChatController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -145,6 +146,16 @@ Route::prefix('customer-preferences-store')->group(function () {
     Route::get('/sellers-by-customer/{customerUserId?}', [CustomerPreferenceStoreController::class, 'getSellerByCustomer']);
     Route::delete('/remove', [CustomerPreferenceStoreController::class, 'removePreference']);
     Route::post('/set-active', [CustomerPreferenceStoreController::class, 'setActivePreference']);
+});
+
+Route::prefix('chat')->group(function () {
+    Route::get('/conversations', [ChatController::class, 'conversations']);
+    Route::post('/conversations', [ChatController::class, 'openConversation']);
+    Route::get('/conversations/{id}', [ChatController::class, 'conversation']);
+    Route::get('/conversations/{id}/messages', [ChatController::class, 'messages']);
+    Route::post('/conversations/{id}/messages', [ChatController::class, 'sendMessage']);
+    Route::post('/messages/{id}/read', [ChatController::class, 'markMessageRead']);
+    Route::post('/conversations/{id}/read', [ChatController::class, 'markConversationRead']);
 });
 Route::prefix('seller/stores/{storeId}/categories')->group(function () {
     Route::get('/marketplace', [SellerStoreCategoryController::class, 'marketplace']);
@@ -393,4 +404,3 @@ Route::prefix('payments')->group(function () {
     Route::post('/aamarpay/store-order/fail', [OnlinePaymentController::class, 'failStoreOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/aamarpay/store-order/cancel', [OnlinePaymentController::class, 'cancelStoreOrder'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
 });
-
