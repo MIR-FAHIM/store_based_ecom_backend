@@ -39,6 +39,7 @@ use App\Http\Controllers\SellerMediaMarketplaceController;
 use App\Http\Controllers\AdminMediaMarketplaceController;
 use App\Http\Controllers\CustomerPreferenceStoreController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\NotificationController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -157,6 +158,14 @@ Route::prefix('chat')->group(function () {
     Route::post('/conversations/{id}/messages', [ChatController::class, 'sendMessage']);
     Route::post('/messages/{id}/read', [ChatController::class, 'markMessageRead']);
     Route::post('/conversations/{id}/read', [ChatController::class, 'markConversationRead']);
+});
+Route::prefix('notifications')->group(function () {
+    Route::get('/', [NotificationController::class, 'index']);
+    Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::get('/orders/{orderId}', [NotificationController::class, 'orderNotifications']);
+    Route::post('/orders/{orderId}/read', [NotificationController::class, 'markOrderRead']);
+    Route::post('/{notificationId}/read', [NotificationController::class, 'markRead']);
+    Route::post('/read-all', [NotificationController::class, 'markAllRead']);
 });
 Route::prefix('seller/stores/{storeId}/categories')->group(function () {
     Route::get('/marketplace', [SellerStoreCategoryController::class, 'marketplace']);

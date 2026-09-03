@@ -62,6 +62,11 @@ class Shops extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class);
+    }
     public function logo()
     {
         return $this->belongsTo(Upload::class , 'logo' ,);

@@ -99,4 +99,9 @@ class User extends Model
     {
         return $this->hasMany(Conversation::class, 'customer_id');
     }
+
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class);
+    }
 }
