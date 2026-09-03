@@ -437,14 +437,28 @@ class ChatService
     private function notifyForMessage(ConversationMessage $message): void
     {
         try {
-            $message->loadMissing('conversation.shop', 'conversation.customer', 'product', 'order', 'sender');
+            $message->loadMissing('conversation.shop.user', 'conversation.customer', 'product', 'order', 'sender');
             $conversation = $message->conversation;
 
             $recipient = $message->sender_type === ConversationMessage::SENDER_CUSTOMER
-                ? ($conversation->shop?->user_id ? User::find($conversation->shop->user_id) : null)
+                ? $conversation->shop?->user
                 : $conversation->customer;
 
             if (!$recipient || (int) $recipient->id === (int) $message->sender_id) {
+                Log::warning('Chat push notification skipped: recipient not found', [
+                    'message_id' => $message->id,
+                    'conversation_id' => $message->conversation_id,
+                    'recipient_type' => $message->sender_type === ConversationMessage::SENDER_CUSTOMER ? 'shop' : 'customer',
+                ]);
+                return;
+            }
+
+            if (!$recipient->device_token) {
+                Log::warning('Chat push notification skipped: recipient device token not found', [
+                    'message_id' => $message->id,
+                    'conversation_id' => $message->conversation_id,
+                    'recipient_id' => $recipient->id,
+                ]);
                 return;
             }
 
