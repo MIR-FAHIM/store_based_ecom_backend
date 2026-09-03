@@ -187,7 +187,7 @@ class UserController extends Controller
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'address' => $user->address,
-                'status' => 'inactive', // Default status for new shops
+                'status' => 'active', // Default status for new shops
                 // Other fields can be filled later or left null
             ]);
 

@@ -376,7 +376,7 @@ class ChatService
     private function recalculateUnreadCount(Conversation $conversation, string $viewerType): void
     {
         if ($viewerType === ConversationMessage::SENDER_SHOP) {
-            $conversation->update([
+            Conversation::whereKey($conversation->id)->update([
                 'shop_unread_count' => ConversationMessage::where('conversation_id', $conversation->id)
                     ->where('sender_type', ConversationMessage::SENDER_CUSTOMER)
                     ->where('is_read', false)
@@ -385,7 +385,7 @@ class ChatService
         }
 
         if ($viewerType === ConversationMessage::SENDER_CUSTOMER) {
-            $conversation->update([
+            Conversation::whereKey($conversation->id)->update([
                 'customer_unread_count' => ConversationMessage::where('conversation_id', $conversation->id)
                     ->where('sender_type', '!=', ConversationMessage::SENDER_CUSTOMER)
                     ->where('is_read', false)
