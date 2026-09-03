@@ -325,6 +325,7 @@ Route::prefix('reports')->group(function () {
     Route::get('/dashboard', [ReportController::class, 'dashboard']);
     Route::get('/shop/{userId}', [ReportController::class, 'shopReportByUser']);
     Route::get('/shop/sales/{shopId}', [ReportController::class, 'shopSalesReport']);
+    Route::get('/shop/{shopId}/summary', [ReportController::class, 'shopSummary']);
     Route::get('/orders/monthly', [ReportController::class, 'orderReportMonthly']);
     Route::get('/today', [ReportController::class, 'todayReport']);
     Route::get('/login-success', [LoginSuccessLogController::class, 'report']);

@@ -246,6 +246,64 @@ class ReportController extends Controller
     }
 
     /**
+     * GET /reports/shop/{shopId}/summary?period=daily|monthly
+     */
+    public function shopSummary(Request $request, int $shopId)
+    {
+        try {
+            $period = $request->input('period');
+            if (!in_array($period, ['daily', 'monthly'], true)) {
+                return $this->failed('Invalid period', [
+                    'period' => ['The period must be either daily or monthly.'],
+                ], 422);
+            }
+
+            $user = $request->attributes->get('api_user');
+            if (!$user) {
+                return $this->failed('Unauthorized', null, 401);
+            }
+
+            $shop = Shops::whereKey($shopId)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$shop) {
+                return $this->failed('You cannot access this shop', null, 403);
+            }
+
+            $now = Carbon::now('Asia/Dhaka');
+            $from = $period === 'daily' ? $now->copy()->startOfDay() : $now->copy()->startOfMonth();
+            $to = $period === 'daily' ? $now->copy()->endOfDay() : $now->copy()->endOfMonth();
+
+            $items = OrderItem::where('shop_id', $shop->id)
+                ->whereHas('order', function ($query) use ($from, $to) {
+                    $query->whereBetween('created_at', [$from, $to]);
+                });
+
+            $totalSales = (float) (clone $items)->sum('line_total');
+            $orderCount = (int) (clone $items)->distinct('order_id')->count('order_id');
+            $paidAmount = (float) (clone $items)
+                ->whereHas('order', fn ($query) => $query->where('payment_status', 'paid'))
+                ->sum('line_total');
+
+            $totalSales = round($totalSales, 2);
+            $paidAmount = round($paidAmount, 2);
+
+            return $this->success('Shop summary fetched successfully', [
+                'period' => $period,
+                'from' => $from->toIso8601String(),
+                'to' => $to->toIso8601String(),
+                'total_sales' => $totalSales,
+                'order_count' => $orderCount,
+                'paid_amount' => $paidAmount,
+                'due_amount' => round($totalSales - $paidAmount, 2),
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * GET /reports/orders/monthly
      * Params: start_month (YYYY-MM), end_month (YYYY-MM), status, payment_status, user_id
      */
