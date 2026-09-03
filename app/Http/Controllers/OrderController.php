@@ -10,7 +10,9 @@ use App\Models\OrderItem;
 use App\Models\Shops;
 use App\Models\ShippingCost;
 use App\Models\User;
+use App\Exceptions\FirebaseNotificationException;
 use App\Service\ChatService;
+use App\Service\FirebaseNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -190,6 +192,8 @@ class OrderController extends Controller
 
             DB::commit();
 
+            $this->notifyShopOwnersOfCheckout($orders);
+
             $smsResult = $this->sendCheckoutConfirmationSms($validated, $orders, $paymentGroupId, $totalPayable);
 
             return $this->success('Checkout successful. Orders created.', [
@@ -288,6 +292,50 @@ class OrderController extends Controller
                 'status' => 'failed',
                 'message' => 'Could not send order confirmation SMS',
             ];
+        }
+    }
+
+    private function notifyShopOwnersOfCheckout(array $orders): void
+    {
+        try {
+            $firebase = app(FirebaseNotificationService::class);
+
+            foreach ($orders as $order) {
+                $shopId = $order->items->first()?->shop_id;
+                $shopOwner = $shopId
+                    ? Shops::with('user')->find($shopId)?->user
+                    : null;
+
+                if (!$shopOwner || !$shopOwner->device_token) {
+                    Log::warning('Checkout shop push notification skipped', [
+                        'order_id' => $order->id,
+                        'shop_id' => $shopId,
+                        'reason' => $shopOwner ? 'device token not found' : 'shop owner not found',
+                    ]);
+                    continue;
+                }
+
+                $firebase->sendToUser(
+                    $shopOwner,
+                    'New order received',
+                    'You have received a new order #' . $order->order_number,
+                    [
+                        'type' => 'new_order',
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'shop_user_id' => $shopOwner->id,
+                    ]
+                );
+            }
+        } catch (FirebaseNotificationException $e) {
+            Log::warning('Checkout shop push notification failed', [
+                'error' => $e->getMessage(),
+                'errors' => $e->errors(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Checkout shop push notification error', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
