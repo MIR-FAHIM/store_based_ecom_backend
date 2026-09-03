@@ -466,7 +466,7 @@ class ChatService
                 $recipient,
                 $this->notificationTitle($message),
                 $this->notificationBody($message),
-                $this->notificationData($message)
+                $this->notificationData($message, (int) $recipient->id)
             );
         } catch (FirebaseNotificationException $e) {
             Log::warning('Chat push notification failed', [
@@ -504,14 +504,15 @@ class ChatService
         };
     }
 
-    private function notificationData(ConversationMessage $message): array
+    private function notificationData(ConversationMessage $message, int $recipientUserId): array
     {
         return [
             'type' => 'chat',
             'conversation_id' => $message->conversation_id,
             'message_id' => $message->id,
-            'shop_id' => $message->conversation?->shop_id,
-            'message_type' => $message->message_type,
+            'sender_user_id' => $message->sender_id,
+            'recipient_user_id' => $recipientUserId,
+            'chat_message_type' => $message->message_type,
             'product_id' => $message->product_id,
             'order_id' => $message->order_id,
         ];
