@@ -149,6 +149,7 @@ Route::prefix('customer-preferences-store')->group(function () {
 });
 
 Route::prefix('chat')->group(function () {
+    Route::get('/unread-count', [ChatController::class, 'unreadCount']);
     Route::get('/conversations', [ChatController::class, 'conversations']);
     Route::post('/conversations', [ChatController::class, 'openConversation']);
     Route::get('/conversations/{id}', [ChatController::class, 'conversation']);

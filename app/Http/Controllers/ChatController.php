@@ -51,6 +51,19 @@ class ChatController extends Controller
         }
     }
 
+    public function unreadCount(Request $request)
+    {
+        try {
+            $user = $this->authenticatedUser($request);
+
+            return $this->success('Unread chat count fetched successfully', [
+                'total_unread_count' => $this->chatService->totalUnreadCountFor($user),
+            ]);
+        } catch (\Throwable $e) {
+            return $this->handleThrowable($e);
+        }
+    }
+
     public function openConversation(Request $request)
     {
         try {

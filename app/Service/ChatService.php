@@ -69,6 +69,18 @@ class ChatService
         return $conversations;
     }
 
+    public function totalUnreadCountFor(User $user): int
+    {
+        $query = Conversation::query();
+        $this->scopeVisibleConversations($query, $user);
+
+        $unreadColumn = $this->defaultViewerType($user) === ConversationMessage::SENDER_SHOP
+            ? 'shop_unread_count'
+            : 'customer_unread_count';
+
+        return (int) $query->sum($unreadColumn);
+    }
+
     public function getConversationFor(User $user, int $conversationId): Conversation
     {
         $conversation = Conversation::with($this->conversationRelations())->find($conversationId);
