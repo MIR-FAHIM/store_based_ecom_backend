@@ -35,7 +35,8 @@ class ReviewController extends Controller
     {
         $data = $request->validate([
             'user_id' => 'required|integer|exists:users,id',
-            'product_id' => 'required|integer|exists:products,id',
+            'product_id' => 'nullable|integer|exists:products,id',
+            'shop_id' => 'required|integer|exists:shops,id',
             'comment' => 'required|string',
             'star_count' => 'required|integer|min:1|max:5',
             'status' => 'nullable|boolean',
@@ -46,6 +47,7 @@ class ReviewController extends Controller
         $review = Review::create([
             'user_id' => $data['user_id'],
             'product_id' => $data['product_id'],
+            'shop_id' => $data['shop_id'],
             'comment' => $data['comment'],
             'star_count' => $data['star_count'],
             'status' => array_key_exists('status', $data) ? (bool) $data['status'] : true,
@@ -61,7 +63,7 @@ class ReviewController extends Controller
      */
     public function getAllReview(Request $request)
     {
-        $query = Review::with('user', 'product');
+        $query = Review::with('user', 'product', 'shop');
 
         if ($request->filled('status')) {
             $query->where('status', (bool) $request->status);
@@ -82,11 +84,28 @@ class ReviewController extends Controller
     {
         $items = Review::where('product_id', $productId)
             ->where('status', 1)
-            ->with('user', 'product')
+            ->with('user', 'product', 'shop')
             ->latest()
             ->get();
 
        return $this->success('Reviews retrieved successfully', [
+            'count' => $items->count(),
+            'items' => $items
+        ]);
+    }
+
+    /**
+     * Get reviews for a shop
+     */
+    public function getReviewByShop($shopId)
+    {
+        $items = Review::where('shop_id', $shopId)
+            ->where('status', 1)
+            ->with('user', 'product', 'shop')
+            ->latest()
+            ->get();
+
+        return $this->success('Reviews retrieved successfully', [
             'count' => $items->count(),
             'items' => $items
         ]);
@@ -99,7 +118,7 @@ class ReviewController extends Controller
     {
         $items = Review::where('user_id', $userId)
             ->where('status', 1)
-            ->with('user', 'product')
+            ->with('user', 'product', 'shop')
             ->latest()
             ->get();
 
@@ -151,7 +170,7 @@ class ReviewController extends Controller
 
         $review->save();
 
-        return $this->success('Review updated successfully', $review->load('user', 'product'));
+        return $this->success('Review updated successfully', $review->load('user', 'product', 'shop'));
     }
 
     /**
@@ -168,6 +187,6 @@ class ReviewController extends Controller
         $review->status = false;
         $review->save();
 
-        return $this->success('Review removed successfully', $review->load('user', 'product'));
+        return $this->success('Review removed successfully', $review->load('user', 'product', 'shop'));
     }
 }

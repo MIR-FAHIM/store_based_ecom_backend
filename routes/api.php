@@ -293,6 +293,7 @@ Route::prefix('reviews')->group(function () {
     Route::post('/add', [ReviewController::class, 'addReview']);
     Route::get('/list', [ReviewController::class, 'getAllReview']);
     Route::get('/product/{productId}', [ReviewController::class, 'getReviewByProduct'])->withoutMiddleware('token');
+    Route::get('/shop/{shopId}', [ReviewController::class, 'getReviewByShop'])->withoutMiddleware('token');
     Route::get('/user/{userId}', [ReviewController::class, 'getReviewByUser']);
     Route::put('/update-by-user/{id}', [ReviewController::class, 'updateReviewByUser']);
     Route::delete('/remove/{id}', [ReviewController::class, 'removeReview']);
