@@ -96,6 +96,11 @@ class Shops extends Model
         return $this->hasMany(MediaResourceOrder::class, 'store_id');
     }
 
+    public function reviews()
+    {
+        return $this->hasMany(Review::class, 'shop_id');
+    }
+
     public function currentSubscription()
     {
         return $this->hasOne(StoreSubscription::class, 'store_id')

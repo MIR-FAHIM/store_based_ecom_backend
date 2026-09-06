@@ -130,7 +130,13 @@ class ShopController extends Controller
     public function listShops(Request $request)
     {
         try {
-            $query = Shops::query();
+            $query = Shops::query()
+                ->withCount([
+                    'reviews as total_reviews' => fn ($reviewQuery) => $reviewQuery->where('status', true),
+                ])
+                ->withAvg([
+                    'reviews as average_review_rating' => fn ($reviewQuery) => $reviewQuery->where('status', true),
+                ], 'star_count');
 
             if ($request->filled('status')) {
                 $query->where('status', $request->status);
@@ -143,17 +149,34 @@ class ShopController extends Controller
             $query->latest();
 
             if ($request->filled('all') && (int) $request->get('all') === 1) {
-                $shops = $query->get();
+                $shops = $query->with('logo','banner','user')->get()
+                    ->map(fn ($shop) => $this->attachReviewSummary($shop));
+
                 return $this->success('Shops fetched successfully', $shops);
             }
 
             $perPage = (int) $request->get('per_page', 100);
             $shops = $query->with('logo','banner','user')->paginate($perPage);
+            $shops->setCollection(
+                $shops->getCollection()->map(fn ($shop) => $this->attachReviewSummary($shop))
+            );
 
             return $this->success('Shops fetched successfully', $shops);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    private function attachReviewSummary(Shops $shop): Shops
+    {
+        $averageRating = $shop->average_review_rating;
+
+        $shop->setAttribute('review_summary', [
+            'average_review_rating' => $averageRating !== null ? round((float) $averageRating, 2) : 0,
+            'total_reviews' => (int) ($shop->total_reviews ?? 0),
+        ]);
+
+        return $shop;
     }
 
     /**
