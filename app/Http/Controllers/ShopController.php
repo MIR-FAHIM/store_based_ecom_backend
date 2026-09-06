@@ -172,7 +172,7 @@ class ShopController extends Controller
     {
         $averageRating = $shop->average_review_rating;
 
-        $shop->setAttribute('review_summary', [
+        $shop->setAttribute('rating', [
             'average_review_rating' => $averageRating !== null ? round((float) $averageRating, 2) : 0,
             'total_reviews' => (int) ($shop->total_reviews ?? 0),
         ]);
