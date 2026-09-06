@@ -157,9 +157,10 @@ class ShopController extends Controller
 
             $perPage = (int) $request->get('per_page', 100);
             $shops = $query->with('logo','banner','user')->paginate($perPage);
-            $shops->setCollection(
-                $shops->getCollection()->map(fn ($shop) => $this->attachReviewSummary($shop))
-            );
+
+            foreach ($shops as $shop) {
+                $this->attachReviewSummary($shop);
+            }
 
             return $this->success('Shops fetched successfully', $shops);
         } catch (\Throwable $e) {
