@@ -206,13 +206,20 @@ class ShopController extends Controller
     public function getShopDetails($id)
     {
         try {
-            $shop = Shops::with('logo','banner','user')->find($id);
+            $shop = Shops::with('logo','banner','user')
+                ->withCount([
+                    'reviews as total_reviews' => fn ($reviewQuery) => $reviewQuery->where('status', true),
+                ])
+                ->withAvg([
+                    'reviews as average_review_rating' => fn ($reviewQuery) => $reviewQuery->where('status', true),
+                ], 'star_count')
+                ->find($id);
 
             if (!$shop) {
                 return $this->failed('Shop not found', null, 404);
             }
 
-            return $this->success('Shop fetched successfully', $shop);
+            return $this->success('Shop fetched successfully', $this->attachReviewSummary($shop));
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
