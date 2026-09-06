@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Review;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
+use Illuminate\Validation\ValidationException;
 
 class ReviewController extends Controller
 {
@@ -33,29 +33,47 @@ class ReviewController extends Controller
      */
     public function addReview(Request $request)
     {
-        $data = $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
-            'product_id' => 'nullable|integer|exists:products,id',
-            'shop_id' => 'required|integer|exists:shops,id',
-            'comment' => 'required|string',
-            'star_count' => 'required|integer|min:1|max:5',
-            'status' => 'nullable|boolean',
-            'priority' => 'nullable|integer|min:0',
-            'type' => 'nullable|string',
-        ]);
+        try {
+            $data = $request->validate([
+                'user_id' => ['required', 'integer', 'exists:users,id'],
+                'product_id' => ['nullable', 'integer', 'exists:products,id'],
+                'shop_id' => ['required', 'integer', 'exists:shops,id'],
+                'comment' => ['required', 'string', 'max:5000'],
+                'star_count' => ['required', 'integer', 'min:1', 'max:5'],
+                'status' => ['nullable', 'boolean'],
+                'priority' => ['nullable', 'integer', 'min:0'],
+                'type' => ['nullable', 'string', 'max:100'],
+            ], [
+                'user_id.required' => 'User is required.',
+                'user_id.exists' => 'Selected user does not exist.',
+                'product_id.exists' => 'Selected product does not exist.',
+                'shop_id.required' => 'Shop is required.',
+                'shop_id.exists' => 'Selected shop does not exist.',
+                'comment.required' => 'Review comment is required.',
+                'star_count.required' => 'Star rating is required.',
+                'star_count.min' => 'Star rating must be at least 1.',
+                'star_count.max' => 'Star rating cannot be greater than 5.',
+            ]);
 
-        $review = Review::create([
-            'user_id' => $data['user_id'],
-            'product_id' => $data['product_id'],
-            'shop_id' => $data['shop_id'],
-            'comment' => $data['comment'],
-            'star_count' => $data['star_count'],
-            'status' => array_key_exists('status', $data) ? (bool) $data['status'] : true,
-            'priority' => $data['priority'] ?? 0,
-            'type' => $data['type'] ?? null,
-        ]);
+            $review = Review::create([
+                'user_id' => $data['user_id'],
+                'product_id' => $data['product_id'] ?? null,
+                'shop_id' => $data['shop_id'],
+                'comment' => $data['comment'],
+                'star_count' => $data['star_count'],
+                'status' => array_key_exists('status', $data) ? (bool) $data['status'] : true,
+                'priority' => $data['priority'] ?? 0,
+                'type' => $data['type'] ?? null,
+            ]);
 
-       return $this->success('Review created successfully', $review, 201);
+            return $this->success('Review created successfully', $review->load('user', 'product', 'shop'), 201);
+        } catch (ValidationException $e) {
+            $firstError = collect($e->errors())->flatten()->first();
+
+            return $this->failed($firstError ?? 'Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
     }
 
     /**
