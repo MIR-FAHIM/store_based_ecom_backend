@@ -121,6 +121,20 @@ class CustomerPreferenceStoreController extends Controller
         });
     }
 
+    private function shopReviewAggregates(): array
+    {
+        return [
+            'reviews as total_reviews' => fn ($reviewQuery) => $reviewQuery->where('status', true),
+        ];
+    }
+
+    private function shopReviewAverage(): array
+    {
+        return [
+            'reviews as average_review_rating' => fn ($reviewQuery) => $reviewQuery->where('status', true),
+        ];
+    }
+
     private function attachSellerShop($preference): void
     {
         if (!$preference->seller) {
@@ -128,13 +142,32 @@ class CustomerPreferenceStoreController extends Controller
         }
 
         $firstShop = $preference->seller->shops->first();
+        if ($firstShop) {
+            $this->attachShopRating($firstShop);
+        }
+
         $preference->seller->setRelation('shop', $firstShop);
         $preference->seller->unsetRelation('shops');
     }
 
+    private function attachShopRating($shop): void
+    {
+        $averageRating = $shop->average_review_rating;
+
+        $shop->setAttribute('rating', [
+            'average_review_rating' => $averageRating !== null ? round((float) $averageRating, 2) : 0,
+            'total_reviews' => (int) ($shop->total_reviews ?? 0),
+        ]);
+    }
+
     private function getCustomerPreferredStores(int $customerUserId)
     {
-        $preferences = CustomerPreferenceStore::with(['seller.shops.logo', 'seller.shops.banner'])
+        $preferences = CustomerPreferenceStore::with([
+                'seller.shops' => fn ($shopQuery) => $shopQuery
+                    ->with('logo', 'banner')
+                    ->withCount($this->shopReviewAggregates())
+                    ->withAvg($this->shopReviewAverage(), 'star_count'),
+            ])
             ->where('customer_user_id', $customerUserId)
             ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
             ->latest()
@@ -325,9 +358,13 @@ class CustomerPreferenceStoreController extends Controller
             }
 
             $perPage = (int) $request->get('per_page', 20);
-            $preferences = CustomerPreferenceStore::with(['seller.shops.logo', 'seller.shops.banner'])
+            $preferences = CustomerPreferenceStore::with([
+                    'seller.shops' => fn ($shopQuery) => $shopQuery
+                        ->with('logo', 'banner')
+                        ->withCount($this->shopReviewAggregates())
+                        ->withAvg($this->shopReviewAverage(), 'star_count'),
+                ])
                 ->where('customer_user_id', $customerUserId)
-                
                 ->latest()
                 ->paginate($perPage);
 
@@ -385,7 +422,12 @@ class CustomerPreferenceStoreController extends Controller
                 ], $typeError['code']);
             }
 
-            $seller = User::with(['shops.logo', 'shops.banner'])->find($sellerId);
+            $seller = User::with([
+                'shops' => fn ($shopQuery) => $shopQuery
+                    ->with('logo', 'banner')
+                    ->withCount($this->shopReviewAggregates())
+                    ->withAvg($this->shopReviewAverage(), 'star_count'),
+            ])->find($sellerId);
             $activeShop = $seller?->shops->firstWhere('status', 'active');
 
             if (!$seller || !$activeShop) {
@@ -401,7 +443,12 @@ class CustomerPreferenceStoreController extends Controller
                 $sellerId,
                 $authUser->id,
                 'customer'
-            )->load(['seller.shops.logo', 'seller.shops.banner']);
+            )->load([
+                'seller.shops' => fn ($shopQuery) => $shopQuery
+                    ->with('logo', 'banner')
+                    ->withCount($this->shopReviewAggregates())
+                    ->withAvg($this->shopReviewAverage(), 'star_count'),
+            ]);
 
             $this->attachSellerShop($preference);
 
