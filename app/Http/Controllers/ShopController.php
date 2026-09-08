@@ -183,6 +183,35 @@ class ShopController extends Controller
     }
 
     /**
+     * GET /shops/{id}/product-limit-report
+     */
+    public function productLimitReport($id)
+    {
+        try {
+            $shop = Shops::find($id);
+
+            if (!$shop) {
+                return $this->failed('Shop not found', null, 404);
+            }
+
+            $productLimit = $shop->product_limit;
+            $totalProductAdded = Product::where('shop_id', $shop->id)->count();
+
+            return $this->success('Shop product limit report fetched successfully', [
+                'shop_id' => (int) $shop->id,
+                'product_limit' => $productLimit !== null ? (int) $productLimit : null,
+                'total_product_added' => (int) $totalProductAdded,
+                'remaining_product_limit' => $productLimit !== null
+                    ? max(0, (int) $productLimit - (int) $totalProductAdded)
+                    : null,
+                'can_add_more_product' => $productLimit === null || $totalProductAdded < (int) $productLimit,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * GET /shops/find-by-code/{code}
      */
     public function findShopByCode($code)

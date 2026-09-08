@@ -128,6 +128,7 @@ Route::prefix('shops')->group(function () {
     Route::post('/create', [ShopController::class, 'createShop']);
     Route::get('/list', [ShopController::class, 'listShops'])->withoutMiddleware('token');
     Route::get('/find-by-code/{code}', [ShopController::class, 'findShopByCode'])->withoutMiddleware('token');
+    Route::get('/{id}/product-limit-report', [ShopController::class, 'productLimitReport']);
     Route::get('/details/{id}', [ShopController::class, 'getShopDetails'])->withoutMiddleware('token');;
     Route::get('/products/{id}', [ShopController::class, 'getShopProducts'])->withoutMiddleware('token');;
     Route::post('/update/{id}', [ShopController::class, 'updateShop']);
