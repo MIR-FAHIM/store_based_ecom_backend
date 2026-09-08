@@ -210,6 +210,7 @@ class AmarPayService
                 'payment_status' => 'paid',
                 'starts_at' => $subscription->starts_at ?: now(),
             ]);
+            $this->syncStoreProductLimit($subscription);
 
             return $this->jsonSuccess('Subscription activated successfully', [
                 'subscription' => $subscription->fresh(['package', 'store']),
@@ -525,6 +526,7 @@ class AmarPayService
                         'payment_reference' => $gatewayTransactionId ?: $lockedPayment->merchant_transaction_id,
                         'starts_at' => $subscription->starts_at ?: now(),
                     ]);
+                    $this->syncStoreProductLimit($subscription);
                 }
             } elseif ($lockedPayment->status !== 'success' && $lockedPayment->payment_type === self::PAYMENT_TYPE_MEDIA_RESOURCE_ORDER) {
                 $gatewayTransactionId = $data['pg_txnid'] ?? $lockedPayment->gateway_transaction_id;
@@ -666,6 +668,15 @@ class AmarPayService
         }
 
         return (int) $store->user_id === (int) $authenticatedUser->id;
+    }
+
+    private function syncStoreProductLimit(StoreSubscription $subscription): void
+    {
+        $subscription->loadMissing('package');
+
+        Shops::whereKey($subscription->store_id)->update([
+            'product_limit' => $subscription->package?->max_products,
+        ]);
     }
 
     private function isAdmin(User $authenticatedUser): bool

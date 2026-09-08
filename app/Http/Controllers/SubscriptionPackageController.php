@@ -339,6 +339,10 @@ class SubscriptionPackageController extends Controller
                 );
             }
 
+            $store->update([
+                'product_limit' => $package->max_products,
+            ]);
+
             return $this->success('Subscription initiated successfully', [
                 'subscription' => $subscription->load('package'),
                 'payment_required' => $paymentRequired,
