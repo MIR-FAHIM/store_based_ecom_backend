@@ -67,6 +67,7 @@ class ShopController extends Controller
                 'lon' => ['nullable', 'numeric'],
 
                 'status' => ['nullable', 'string', 'max:50'], // pending, active, suspended
+                'product_limit' => ['nullable', 'integer', 'min:0'],
             ]);
 
             if (!empty($validated['code'])) {
@@ -114,6 +115,7 @@ class ShopController extends Controller
                 'lon' => $validated['lon'] ?? null,
 
                 'status' => $validated['status'] ?? 'pending',
+                'product_limit' => $validated['product_limit'] ?? null,
             ]);
 
             return $this->success('Shop created successfully', $shop, 201);
@@ -316,6 +318,7 @@ class ShopController extends Controller
                 'lon' => ['nullable', 'numeric'],
 
                 'status' => ['nullable', 'string', 'max:50'],
+                'product_limit' => ['nullable', 'integer', 'min:0'],
             ]);
 
             // Normalize shop code before update.

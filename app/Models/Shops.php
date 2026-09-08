@@ -29,11 +29,13 @@ class Shops extends Model
         'lat',
         'lon',
         'status',
+        'product_limit',
     ];
 
     protected $casts = [
         'lat' => 'float',
         'lon' => 'float',
+        'product_limit' => 'integer',
     ];
 
     protected static function booted(): void
