@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class OrderController extends Controller
 {
@@ -500,6 +501,41 @@ class OrderController extends Controller
             }
 
             return $this->success('Order fetched successfully', $order);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /orders/shop/{shopId}/report
+     */
+    public function shopOrderReport($shopId)
+    {
+        try {
+            $shop = Shops::find($shopId);
+            if (!$shop) {
+                return $this->failed('Shop not found', null, 404);
+            }
+
+            $today = Carbon::today();
+            $yesterday = Carbon::yesterday();
+
+            $countOrdersBetween = function ($startDate, $endDate) use ($shopId) {
+                return Order::whereHas('items', function ($query) use ($shopId) {
+                        $query->where('shop_id', $shopId);
+                    })
+                    ->whereBetween('created_at', [$startDate, $endDate])
+                    ->distinct('orders.id')
+                    ->count('orders.id');
+            };
+
+            return $this->success('Shop order report fetched successfully', [
+                'shop_id' => (int) $shop->id,
+                'today_total_order' => $countOrdersBetween($today->copy()->startOfDay(), $today->copy()->endOfDay()),
+                'yesterday_total_order' => $countOrdersBetween($yesterday->copy()->startOfDay(), $yesterday->copy()->endOfDay()),
+                'last_week_total_order' => $countOrdersBetween(now()->subDays(7)->startOfDay(), now()->endOfDay()),
+                'last_month_total_order' => $countOrdersBetween(now()->subDays(30)->startOfDay(), now()->endOfDay()),
+            ]);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
