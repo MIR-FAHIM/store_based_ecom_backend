@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('delivery_men', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('store_id')->nullable()->constrained('shops')->nullOnDelete();
-            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->unsignedBigInteger('store_id')->nullable();
+            $table->unsignedInteger('user_id')->nullable();
             $table->string('mobile')->nullable();
             $table->string('emergency_contact')->nullable();
             $table->string('father_name')->nullable();
@@ -26,6 +26,9 @@ return new class extends Migration
             $table->boolean('is_verified')->default(false);
             $table->text('note')->nullable();
             $table->timestamps();
+
+            $table->foreign('store_id')->references('id')->on('shops')->onDelete('set null');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('set null');
         });
     }
 
