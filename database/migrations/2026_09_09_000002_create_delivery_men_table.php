@@ -11,25 +11,63 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('delivery_men', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('store_id')->nullable();
-            $table->unsignedInteger('user_id')->nullable();
-            $table->string('mobile')->nullable();
-            $table->string('emergency_contact')->nullable();
-            $table->string('father_name')->nullable();
-            $table->string('father_contact')->nullable();
-            $table->string('type')->nullable()->default('in_house');
-            $table->decimal('earning', 12, 2)->default(0.00);
-            $table->string('status')->default('active');
-            $table->text('address')->nullable();
-            $table->boolean('is_verified')->default(false);
-            $table->text('note')->nullable();
-            $table->timestamps();
-
-            $table->foreign('store_id')->references('id')->on('shops')->onDelete('set null');
-            $table->foreign('user_id')->references('id')->on('users')->onDelete('set null');
-        });
+        if (!Schema::hasTable('delivery_men')) {
+            Schema::create('delivery_men', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('store_id')->nullable()->index();
+                $table->foreignId('user_id')->nullable()->index();
+                $table->string('mobile')->nullable();
+                $table->string('emergency_contact')->nullable();
+                $table->string('father_name')->nullable();
+                $table->string('father_contact')->nullable();
+                $table->string('type')->nullable()->default('in_house');
+                $table->decimal('earning', 12, 2)->default(0.00);
+                $table->string('status')->default('active');
+                $table->text('address')->nullable();
+                $table->boolean('is_verified')->default(false);
+                $table->text('note')->nullable();
+                $table->timestamps();
+            });
+        } else {
+            Schema::table('delivery_men', function (Blueprint $table) {
+                if (!Schema::hasColumn('delivery_men', 'store_id')) {
+                    $table->foreignId('store_id')->nullable()->index();
+                }
+                if (!Schema::hasColumn('delivery_men', 'user_id')) {
+                    $table->foreignId('user_id')->nullable()->index();
+                }
+                if (!Schema::hasColumn('delivery_men', 'mobile')) {
+                    $table->string('mobile')->nullable();
+                }
+                if (!Schema::hasColumn('delivery_men', 'emergency_contact')) {
+                    $table->string('emergency_contact')->nullable();
+                }
+                if (!Schema::hasColumn('delivery_men', 'father_name')) {
+                    $table->string('father_name')->nullable();
+                }
+                if (!Schema::hasColumn('delivery_men', 'father_contact')) {
+                    $table->string('father_contact')->nullable();
+                }
+                if (!Schema::hasColumn('delivery_men', 'type')) {
+                    $table->string('type')->nullable()->default('in_house');
+                }
+                if (!Schema::hasColumn('delivery_men', 'earning')) {
+                    $table->decimal('earning', 12, 2)->default(0.00);
+                }
+                if (!Schema::hasColumn('delivery_men', 'status')) {
+                    $table->string('status')->default('active');
+                }
+                if (!Schema::hasColumn('delivery_men', 'address')) {
+                    $table->text('address')->nullable();
+                }
+                if (!Schema::hasColumn('delivery_men', 'is_verified')) {
+                    $table->boolean('is_verified')->default(false);
+                }
+                if (!Schema::hasColumn('delivery_men', 'note')) {
+                    $table->text('note')->nullable();
+                }
+            });
+        }
     }
 
     /**
