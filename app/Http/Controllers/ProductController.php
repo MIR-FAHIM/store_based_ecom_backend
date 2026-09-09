@@ -257,6 +257,7 @@ class ProductController extends Controller
             'category' => $product->category,
             'brand' => $product->brand,
             'average_review' => $product->averageReview,
+            'click_count' => (int) ($product->click_count ?? 0),
             'product' => $product,
         ];
     }
@@ -1486,6 +1487,9 @@ class ProductController extends Controller
                     : $query->whereHas('product', fn ($productQuery) => $productQuery->where('slug', $identifier))->first();
 
                 if ($storeProduct) {
+                    if ($storeProduct->product) {
+                        $storeProduct->product->increment('click_count');
+                    }
                     return $this->success('Product fetched successfully', $this->formatStoreProductForPublic($storeProduct));
                 }
 
@@ -1512,6 +1516,8 @@ class ProductController extends Controller
                 if (!$product) {
                     return $this->failed('Product not found', null, 404);
                 }
+
+                $product->increment('click_count');
 
                 $productArr = $product->toArray();
                 $productArr['price'] = $product->unit_price;
@@ -1549,6 +1555,7 @@ class ProductController extends Controller
             if (!$product) {
                 return $this->failed('Product not found', null, 404);
             }
+            $product->increment('click_count');
             $productArr = $product->toArray();
             $productArr['price'] = $product->unit_price;
             $productArr['sale_price'] = $this->getFinalSalePrice($product);

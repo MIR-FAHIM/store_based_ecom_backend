@@ -74,6 +74,15 @@ class Product extends Model
         'external_link_btn',
         'wholesale_product',
         'frequently_brought_selection_type',
+        'click_count',
+    ];
+
+    protected $casts = [
+        'click_count' => 'integer',
+        'unit_price' => 'float',
+        'discount' => 'float',
+        'current_stock' => 'integer',
+        'num_of_sale' => 'integer',
     ];
 
     // ✅ Relationships
