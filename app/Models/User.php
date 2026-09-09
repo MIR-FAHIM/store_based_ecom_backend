@@ -109,4 +109,9 @@ class User extends Model
     {
         return $this->hasMany(Order::class, 'user_id');
     }
+
+    public function deliveryManProfile()
+    {
+        return $this->hasOne(DeliveryMan::class, 'user_id');
+    }
 }

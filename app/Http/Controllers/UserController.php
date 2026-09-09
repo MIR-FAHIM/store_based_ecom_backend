@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Shops;
 use App\Models\Product;
+use App\Models\DeliveryMan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -192,6 +193,84 @@ class UserController extends Controller
             ]);
 
             return $this->success('Seller and shop created successfully', $user, 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /users/create-delivery-man
+     * POST /users/add-delivery-man
+     * Create a user with user_type = 'delivery_man' and associated DeliveryMan profile.
+     */
+    public function createDeliveryMan(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'name' => ['required', 'string', 'max:255'],
+                'mobile' => ['nullable', 'string', 'max:50', 'required_without:phone'],
+                'phone' => ['nullable', 'string', 'max:50', 'required_without:mobile'],
+                'shop_id' => ['nullable', 'integer', 'exists:shops,id', 'required_without:store_id'],
+                'store_id' => ['nullable', 'integer', 'exists:shops,id', 'required_without:shop_id'],
+                'email' => ['nullable', 'email', 'max:255', 'unique:users,email'],
+                'password' => ['nullable', 'string', 'min:6'],
+                'address' => ['nullable', 'string', 'max:1000'],
+                'type' => ['nullable', 'string', 'max:50'],
+                'earning' => ['nullable', 'numeric', 'min:0'],
+                'status' => ['nullable', 'string', 'max:50'],
+                'is_verified' => ['nullable', 'boolean'],
+                'emergency_contact' => ['nullable', 'string', 'max:50'],
+                'father_name' => ['nullable', 'string', 'max:255'],
+                'father_contact' => ['nullable', 'string', 'max:50'],
+                'note' => ['nullable', 'string'],
+            ]);
+
+            $mobile = $validated['mobile'] ?? $validated['phone'];
+            $storeId = (int) ($validated['shop_id'] ?? $validated['store_id']);
+
+            $email = $validated['email'] ?? null;
+            if (!$email) {
+                $sanitizedPhone = preg_replace('/[^0-9]/', '', $mobile);
+                $email = 'delivery_' . ($sanitizedPhone ?: Str::random(8)) . '@store.com';
+
+                while (User::where('email', $email)->exists()) {
+                    $email = 'delivery_' . Str::random(8) . '@store.com';
+                }
+            }
+
+            $passwordStr = $validated['password'] ?? 'password123';
+
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $email,
+                'password' => Hash::make($passwordStr),
+                'user_type' => 'delivery_man',
+                'phone' => $mobile,
+                'address' => $validated['address'] ?? null,
+            ]);
+
+            $deliveryMan = DeliveryMan::create([
+                'user_id' => $user->id,
+                'store_id' => $storeId,
+                'mobile' => $mobile,
+                'emergency_contact' => $validated['emergency_contact'] ?? null,
+                'father_name' => $validated['father_name'] ?? null,
+                'father_contact' => $validated['father_contact'] ?? null,
+                'type' => $validated['type'] ?? 'in_house',
+                'earning' => isset($validated['earning']) ? (float) $validated['earning'] : 0.00,
+                'status' => $validated['status'] ?? 'active',
+                'address' => $validated['address'] ?? null,
+                'is_verified' => filter_var($validated['is_verified'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'note' => $validated['note'] ?? null,
+            ]);
+
+            $user->setRelation('delivery_man_profile', $deliveryMan);
+            $user->setRelation('delivery_man', $deliveryMan);
+            $user->setRelation('shop', Shops::find($storeId));
+
+            return $this->success('Delivery man created successfully', $user, 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->failed('Validation failed', $e->errors(), 422);
         } catch (\Throwable $e) {

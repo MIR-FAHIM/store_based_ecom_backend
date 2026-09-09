@@ -124,4 +124,9 @@ class Shops extends Model
     {
         return $this->hasMany(Conversation::class, 'shop_id');
     }
+
+    public function deliveryMen()
+    {
+        return $this->hasMany(DeliveryMan::class, 'store_id');
+    }
 }
