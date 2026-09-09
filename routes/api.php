@@ -413,6 +413,9 @@ Route::prefix('firebase')->group(function () {
 
 
 Route::prefix('payments')->group(function () {
+    Route::get('/online/list', [OnlinePaymentController::class, 'listOnlinePayments']);
+    Route::get('/online/report', [OnlinePaymentController::class, 'onlinePaymentReport']);
+
     Route::post('/aamarpay/initiate', [OnlinePaymentController::class, 'initiate']);
     Route::post('/aamarpay/success', [OnlinePaymentController::class, 'success'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/aamarpay/fail', [OnlinePaymentController::class, 'fail'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
