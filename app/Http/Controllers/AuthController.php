@@ -437,4 +437,70 @@ class AuthController extends Controller
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
     }
+
+    /**
+     * POST /auth/change-password
+     * POST /users/change-password
+     * Change user password by checking previous password first
+     */
+    public function changePassword(Request $request)
+    {
+        try {
+            $authUser = $request->attributes->get('api_user');
+
+            $targetUserId = $request->input('user_id') ?? $authUser?->id;
+
+            if (!$targetUserId) {
+                return $this->failed('User ID or authentication token is required', null, 401);
+            }
+
+            $user = User::find($targetUserId);
+
+            if (!$user) {
+                return $this->failed('User not found', null, 404);
+            }
+
+            $currentPassword = $request->input('old_password') 
+                ?? $request->input('current_password') 
+                ?? $request->input('previous_password');
+
+            if (empty($currentPassword)) {
+                return $this->failed('Previous password is required', [
+                    'old_password' => ['The previous password field is required.'],
+                ], 422);
+            }
+
+            // Verify previous password
+            if (!Hash::check($currentPassword, $user->password)) {
+                return $this->failed('Previous password does not match', [
+                    'old_password' => ['The previous password provided does not match our records.'],
+                ], 422);
+            }
+
+            $newPassword = $request->input('new_password') ?? $request->input('password');
+            $confirmation = $request->input('new_password_confirmation') 
+                ?? $request->input('password_confirmation') 
+                ?? $request->input('confirm_password');
+
+            if (empty($newPassword) || strlen($newPassword) < 6) {
+                return $this->failed('New password must be at least 6 characters', [
+                    'new_password' => ['The new password field is required and must be at least 6 characters.'],
+                ], 422);
+            }
+
+            if (!empty($confirmation) && $newPassword !== $confirmation) {
+                return $this->failed('Password confirmation does not match', [
+                    'new_password_confirmation' => ['The new password confirmation does not match.'],
+                ], 422);
+            }
+
+            // Update to new password
+            $user->password = Hash::make($newPassword);
+            $user->save();
+
+            return $this->success('Password changed successfully');
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
 }

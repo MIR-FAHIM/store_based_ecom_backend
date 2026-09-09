@@ -46,12 +46,14 @@ Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware(
 Route::post('/auth/login-seller', [AuthController::class, 'loginSeller'])->withoutMiddleware('token');
 Route::post('/auth/login-otp', [AuthController::class, 'loginWithOtp'])->withoutMiddleware('token');
 Route::post('/auth/logout', [AuthController::class, 'logout']);
+Route::post('/auth/change-password', [AuthController::class, 'changePassword']);
 Route::get('/auth/tokens', [AuthController::class, 'listTokens']);
 Route::delete('/auth/tokens/{id}', [AuthController::class, 'revokeToken']);
 Route::prefix('users')->group(function () {
     Route::post('/create', [UserController::class, 'createUser'])->withoutMiddleware('token');;
     Route::post('/create-seller', [UserController::class, 'createSeller'])->withoutMiddleware('token');;
     Route::get('/check-referral-code', [UserController::class, 'checkReferralCode'])->withoutMiddleware('token');
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
 
     Route::get('/list', [UserController::class, 'listUsers']);
     Route::get('/customers', [UserController::class, 'getCustomers']);
