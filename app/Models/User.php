@@ -104,4 +104,9 @@ class User extends Model
     {
         return $this->hasMany(Notification::class);
     }
+
+    public function orders()
+    {
+        return $this->hasMany(Order::class, 'user_id');
+    }
 }

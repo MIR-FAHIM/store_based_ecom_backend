@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CustomerPreferenceStore;
+use App\Models\Shops;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -331,11 +332,46 @@ class CustomerPreferenceStoreController extends Controller
             }
 
             $perPage = (int) $request->get('per_page', 20);
-            $preferences = CustomerPreferenceStore::with(['customer'])
+            $shopIds = Shops::where('user_id', $sellerId)->pluck('id');
+
+            $preferences = CustomerPreferenceStore::with([
+                    'customer' => function ($customerQuery) use ($shopIds) {
+                        $customerQuery->withCount([
+                            'orders as orders_count' => function ($orderQuery) use ($shopIds) {
+                                if ($shopIds->isNotEmpty()) {
+                                    $orderQuery->whereHas('items', function ($itemQuery) use ($shopIds) {
+                                        $itemQuery->whereIn('shop_id', $shopIds);
+                                    });
+                                } else {
+                                    $orderQuery->whereRaw('1 = 0');
+                                }
+                            },
+                            'orders as order_count' => function ($orderQuery) use ($shopIds) {
+                                if ($shopIds->isNotEmpty()) {
+                                    $orderQuery->whereHas('items', function ($itemQuery) use ($shopIds) {
+                                        $itemQuery->whereIn('shop_id', $shopIds);
+                                    });
+                                } else {
+                                    $orderQuery->whereRaw('1 = 0');
+                                }
+                            },
+                        ]);
+                    },
+                ])
                 ->where('seller_id', $sellerId)
                 ->where('status', 'active')
                 ->latest()
                 ->paginate($perPage);
+
+            foreach ($preferences as $preference) {
+                $count = (int) ($preference->customer?->orders_count ?? $preference->customer?->order_count ?? 0);
+                if ($preference->customer) {
+                    $preference->customer->orders_count = $count;
+                    $preference->customer->order_count = $count;
+                }
+                $preference->orders_count = $count;
+                $preference->order_count = $count;
+            }
 
             return $this->success('Seller preferred customers fetched successfully', $preferences);
         } catch (\Throwable $e) {
