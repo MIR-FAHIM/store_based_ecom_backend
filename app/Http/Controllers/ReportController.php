@@ -397,13 +397,15 @@ class ReportController extends Controller
                 ->whereDate('created_at', $today)
                 ->count();
 
+            $productClicked = (int) Product::sum('click_count');
+
             $data = [
                 'date' => $today,
                 'total_orders' => $totalOrders,
                 'total_registered' => $totalRegistered,
                 'website_visitors' => 0,
                 'cart_clicked' => 0,
-                'product_clicked' => 0,
+                'product_clicked' => $productClicked,
                 'total_review' => $totalReview,
                 'total_earn' => $totalEarn,
                 'total_delivered' => $totalDelivered,
