@@ -110,6 +110,16 @@ class Shops extends Model
             ->latestOfMany();
     }
 
+    public function latestSubscription()
+    {
+        return $this->hasOne(StoreSubscription::class, 'store_id')->latestOfMany();
+    }
+
+    public function lastSubscription()
+    {
+        return $this->hasOne(StoreSubscription::class, 'store_id')->latestOfMany();
+    }
+
     public function conversations()
     {
         return $this->hasMany(Conversation::class, 'shop_id');

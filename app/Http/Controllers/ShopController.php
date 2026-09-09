@@ -151,14 +151,14 @@ class ShopController extends Controller
             $query->latest();
 
             if ($request->filled('all') && (int) $request->get('all') === 1) {
-                $shops = $query->with('logo','banner','user')->get()
+                $shops = $query->with(['logo', 'banner', 'user', 'latestSubscription.package', 'currentSubscription.package'])->get()
                     ->map(fn ($shop) => $this->attachReviewSummary($shop));
 
                 return $this->success('Shops fetched successfully', $shops);
             }
 
             $perPage = (int) $request->get('per_page', 100);
-            $shops = $query->with('logo','banner','user')->paginate($perPage);
+            $shops = $query->with(['logo', 'banner', 'user', 'latestSubscription.package', 'currentSubscription.package'])->paginate($perPage);
 
             foreach ($shops as $shop) {
                 $this->attachReviewSummary($shop);
@@ -178,6 +178,10 @@ class ShopController extends Controller
             'average_review_rating' => $averageRating !== null ? round((float) $averageRating, 2) : 0,
             'total_reviews' => (int) ($shop->total_reviews ?? 0),
         ]);
+
+        $lastSubscription = $shop->latestSubscription ?? $shop->currentSubscription;
+        $shop->setRelation('last_subscription', $lastSubscription);
+        $shop->setRelation('latest_subscription', $lastSubscription);
 
         return $shop;
     }
