@@ -507,6 +507,71 @@ class OrderController extends Controller
     }
 
     /**
+     * GET /orders/shop/{shopId}/user/{userId}?per_page=20
+     * or GET /orders/user-orders-by-shop?shop_id={shopId}&user_id={userId}
+     * List orders of a specific user for a specific shop
+     */
+    public function listOrdersByShopAndUser(Request $request, $shopId = null, $userId = null)
+    {
+        try {
+            $shopId = (int) ($shopId ?: $request->route('shopId') ?: $request->route('shop_id') ?: $request->get('shop_id'));
+            $userId = (int) ($userId ?: $request->route('userId') ?: $request->route('user_id') ?: $request->get('user_id'));
+
+            if (!$shopId) {
+                return $this->failed('shop_id is required', null, 422);
+            }
+
+            if (!$userId) {
+                return $this->failed('user_id is required', null, 422);
+            }
+
+            $shop = Shops::find($shopId);
+            if (!$shop) {
+                return $this->failed('Shop not found', null, 404);
+            }
+
+            $user = User::find($userId);
+            if (!$user) {
+                return $this->failed('User not found', null, 404);
+            }
+
+            $perPage = (int) $request->get('per_page', 20);
+
+            $query = Order::where('user_id', $userId)
+                ->whereHas('items', function ($query) use ($shopId) {
+                    $query->where('shop_id', $shopId);
+                })
+                ->with([
+                    'items' => function ($query) use ($shopId) {
+                        $query->where('shop_id', $shopId)->with('product');
+                    },
+                    'user',
+                    'userAddress.district',
+                    'userAddress.division',
+                ]);
+
+            if ($request->filled('status')) {
+                $query->where('status', $request->query('status'));
+            }
+
+            if ($request->filled('payment_status')) {
+                $query->where('payment_status', $request->query('payment_status'));
+            }
+
+            $orders = $query->latest()->paginate($perPage);
+
+            foreach ($orders as $order) {
+                $order->shop_name = $shop->name ?? $shop->shop_name;
+                $order->shop_id = (int) $shop->id;
+            }
+
+            return $this->success('Shop user orders fetched successfully', $orders);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * GET /orders/shop/{shopId}/report
      */
     public function shopOrderReport($shopId)

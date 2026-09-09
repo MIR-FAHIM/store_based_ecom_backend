@@ -246,6 +246,8 @@ Route::prefix('orders')->group(function () {
     Route::get('/shop/{userId}', [OrderController::class, 'listOrdersByShop']);
     Route::get('/shop/{shopId}/report', [OrderController::class, 'shopOrderReport']);
     Route::get('/shop/{shopId}/check/{orderId}', [OrderController::class, 'checkShopOrder']);
+    Route::get('/shop/{shopId}/user/{userId}', [OrderController::class, 'listOrdersByShopAndUser']);
+    Route::get('/user-orders-by-shop', [OrderController::class, 'listOrdersByShopAndUser']);
 
     Route::get('/details/{id}', [OrderController::class, 'getOrderDetails']);
 
