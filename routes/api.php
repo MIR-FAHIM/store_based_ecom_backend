@@ -61,6 +61,8 @@ Route::prefix('users')->group(function () {
     Route::get('/customers', [UserController::class, 'getCustomers']);
     Route::get('/vendors', [UserController::class, 'getVendors']);
     Route::get('/delivery-men', [UserController::class, 'getDeliveryMan']);
+    Route::get('/delivery-men/shop/{shopId}', [UserController::class, 'getDeliveryMan']);
+    Route::get('/shop/{shopId}/delivery-men', [UserController::class, 'getDeliveryMan']);
     Route::get('/admins', [UserController::class, 'getAdmins']);
     Route::get('/admin-list', [UserController::class, 'getAdmins']);
     Route::get('/seller-profile', [UserController::class, 'getSellerProfile'])->withoutMiddleware('token');
@@ -71,6 +73,13 @@ Route::prefix('users')->group(function () {
     Route::patch('/unban/{id}', [UserController::class, 'unbanUser']);
     Route::delete('/delete/{id}', [UserController::class, 'deleteUser']);
     Route::delete('/delete-seller/{id}', [UserController::class, 'deleteSeller']);
+});
+
+Route::prefix('delivery-men')->group(function () {
+    Route::get('/list', [UserController::class, 'getDeliveryMan']);
+    Route::get('/shop/{shopId}', [UserController::class, 'getDeliveryMan']);
+    Route::post('/create', [UserController::class, 'createDeliveryMan']);
+    Route::post('/add', [UserController::class, 'createDeliveryMan']);
 });
 
 Route::prefix('categories')->group(function () {

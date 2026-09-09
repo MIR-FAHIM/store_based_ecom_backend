@@ -363,11 +363,64 @@ class UserController extends Controller
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
     }
-    public function getDeliveryMan(Request $request)
+    /**
+     * GET /users/delivery-men
+     * GET /users/delivery-men/shop/{shopId}
+     * GET /delivery-men/list
+     * GET /delivery-men/shop/{shopId}
+     * Get list of delivery men (optionally filtered by shop_id / store_id)
+     */
+    public function getDeliveryMan(Request $request, $shopId = null)
     {
         try {
+            $storeId = $shopId ?? $request->get('shop_id') ?? $request->get('store_id');
+
+            $query = User::whereIn('user_type', ['delivery_man', 'delivery_boy'])
+                ->with(['deliveryManProfile.store', 'shops']);
+
+            if ($storeId) {
+                $targetStoreId = (int) $storeId;
+                $query->whereHas('deliveryManProfile', function ($dq) use ($targetStoreId) {
+                    $dq->where('store_id', $targetStoreId);
+                });
+            }
+
+            if ($request->filled('status')) {
+                $status = $request->get('status');
+                $query->whereHas('deliveryManProfile', function ($dq) use ($status) {
+                    $dq->where('status', $status);
+                });
+            }
+
+            if ($request->filled('search')) {
+                $search = trim((string) $request->get('search'));
+                $like = '%' . $search . '%';
+
+                $query->where(function ($q) use ($like) {
+                    $q->where('name', 'like', $like)
+                      ->orWhere('email', 'like', $like)
+                      ->orWhere('phone', 'like', $like)
+                      ->orWhereHas('deliveryManProfile', function ($dq) use ($like) {
+                          $dq->where('mobile', 'like', $like)
+                             ->orWhere('father_name', 'like', $like)
+                             ->orWhere('emergency_contact', 'like', $like);
+                      });
+                });
+            }
+
+            $query->latest();
+
+            if ($request->filled('all') && filter_var($request->get('all'), FILTER_VALIDATE_BOOLEAN)) {
+                $deliveryMen = $query->get()->map(function ($user) {
+                    $user->setRelation('delivery_man_profile', $user->deliveryManProfile);
+                    return $user;
+                });
+
+                return $this->success('Delivery men fetched successfully', $deliveryMen);
+            }
+
             $perPage = (int) ($request->get('per_page', 20));
-            $deliveryMen = User::where('user_type', 'delivery_boy')->latest()->paginate($perPage);
+            $deliveryMen = $query->paginate($perPage);
 
             return $this->success('Delivery men fetched successfully', $deliveryMen);
         } catch (\Throwable $e) {
