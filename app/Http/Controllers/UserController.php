@@ -297,6 +297,48 @@ class UserController extends Controller
     }
 
     /**
+     * GET /users/admins?per_page=20
+     */
+    public function getAdmins(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'page' => ['nullable', 'integer', 'min:1'],
+                'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
+                'search' => ['nullable', 'string', 'max:255'],
+            ]);
+
+            $perPage = (int) ($validated['per_page'] ?? $request->get('per_page', 20));
+
+            $query = User::where('user_type', 'admin');
+
+            if (!empty($validated['search'])) {
+                $search = trim($validated['search']);
+                $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
+                $hasMobileColumn = Schema::hasColumn('users', 'mobile');
+
+                $query->where(function ($q) use ($like, $hasMobileColumn) {
+                    $q->where('name', 'like', $like)
+                        ->orWhere('phone', 'like', $like)
+                        ->orWhere('email', 'like', $like);
+
+                    if ($hasMobileColumn) {
+                        $q->orWhere('mobile', 'like', $like);
+                    }
+                });
+            }
+
+            $admins = $query->latest()->paginate($perPage);
+
+            return $this->success('Admins fetched successfully', $admins);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * GET /users/details/{id}
      */
     public function getSellerProfile(Request $request, $id = null)
