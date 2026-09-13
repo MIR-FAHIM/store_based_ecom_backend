@@ -40,6 +40,7 @@ use App\Http\Controllers\AdminMediaMarketplaceController;
 use App\Http\Controllers\CustomerPreferenceStoreController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\StoreQrController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -195,6 +196,11 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
     Route::get('/products', [SellerStoreProductController::class, 'index']);
     Route::put('/products/{storeProductId}', [SellerStoreProductController::class, 'update']);
     Route::delete('/products/{storeProductId}', [SellerStoreProductController::class, 'remove']);
+});
+
+Route::prefix('stores/{storeId}/qr')->group(function () {
+    Route::get('/app', [StoreQrController::class, 'appQr']);
+    Route::get('/payload', [StoreQrController::class, 'payload']);
 });
 
 Route::prefix('seller/media-marketplace')->group(function () {
