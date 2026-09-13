@@ -11,17 +11,22 @@ use Illuminate\Support\Facades\Log;
 
 class ApiTokenAuth
 {
-public function handle(Request $request, Closure $next, $scope = null)
-{
-    $plainToken = $request->bearerToken();
+    public function handle(Request $request, Closure $next, $scope = null)
+    {
+        if ($request->isMethod('OPTIONS')) {
+            return $next($request);
+        }
 
-    if (!$plainToken) {
-        return response()->json([
-            'status'=>'error',
-            'message'=>'API token missing'], 401);
-    }
+        $plainToken = $request->bearerToken();
 
-    $tokenHash = hash('sha256', $plainToken);
+        if (!$plainToken) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'API token missing'
+            ], 401);
+        }
+
+        $tokenHash = hash('sha256', $plainToken);
 
     $apiToken = ApiToken::with('user')
         ->where('token_hash', $tokenHash)
