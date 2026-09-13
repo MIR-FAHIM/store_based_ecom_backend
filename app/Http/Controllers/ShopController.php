@@ -148,6 +148,11 @@ class ShopController extends Controller
                 $query->where('user_id', $request->user_id);
             }
 
+            if ($request->filled('search')) {
+                $search = trim((string) $request->search);
+                $query->where('shop_name', 'like', '%' . $search . '%');
+            }
+
             $query->latest();
 
             if ($request->filled('all') && (int) $request->get('all') === 1) {
