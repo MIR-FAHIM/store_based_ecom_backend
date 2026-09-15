@@ -88,6 +88,7 @@ class AuthController extends Controller
                 'email' => ['nullable', 'email', 'required_without:phone'],
                 'phone' => ['nullable', 'string', 'required_without:email'],
                 'password' => ['required', 'string', 'min:6'],
+                'user_type' => ['nullable', 'string'],
                 'expires_in_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
                 'name' => ['nullable', 'string', 'max:255'],
                 'platform' => ['nullable', 'string', 'max:50'],
@@ -121,6 +122,10 @@ class AuthController extends Controller
 
             if (!$user ) {
                 return $this->failed('Invalid credentials', null, 401);
+            }
+
+            if (!empty($validated['user_type']) && $user->user_type !== $validated['user_type']) {
+                return $this->failed("This account is not a {$validated['user_type']} account", null, 403);
             }
 
             if (!Hash::check($validated['password'], $user->password)) {
