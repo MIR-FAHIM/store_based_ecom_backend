@@ -194,8 +194,9 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
     Route::get('/product-catalog', [SellerStoreProductController::class, 'catalog']);
     Route::post('/products/add-from-catalog', [SellerStoreProductController::class, 'addFromCatalog']);
     Route::get('/products', [SellerStoreProductController::class, 'index']);
-    Route::put('/products/{storeProductId}', [SellerStoreProductController::class, 'update']);
-    Route::delete('/products/{storeProductId}', [SellerStoreProductController::class, 'remove']);
+    Route::get('/products/details/{storeProductId}', [SellerStoreProductController::class, 'showStoreProductDetails']);
+    Route::put('/products/update/{storeProductId}', [SellerStoreProductController::class, 'update']);
+    Route::delete('/products/remove/{storeProductId}', [SellerStoreProductController::class, 'remove']);
 });
 
 Route::prefix('stores/{storeId}/qr')->group(function () {

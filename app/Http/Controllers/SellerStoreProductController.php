@@ -91,20 +91,29 @@ class SellerStoreProductController extends Controller
 
     private function productCatalogQuery()
     {
-        $query = Product::query()->with([
-            'primaryImage',
-            'images.upload',
-            'category',
-            'brand',
-            'productAttributes.attribute',
-            'productAttributes.value',
-        ])->where('approved', 1);
+        $query = Product::query()->with($this->productDetailsRelations())->where('approved', 1);
 
         if (Schema::hasColumn('products', 'published')) {
             $query->where('published', 1);
         }
 
         return $query;
+    }
+
+    private function productDetailsRelations(): array
+    {
+        return [
+            'images.upload',
+            'primaryImage',
+            'brand',
+            'category',
+            'subCategory',
+            'averageReview',
+            'shop',
+            'related',
+            'productAttributes.attribute',
+            'productAttributes.value',
+        ];
     }
 
     private function formatStoreProduct(StoreProduct $storeProduct): array
@@ -300,6 +309,40 @@ class SellerStoreProductController extends Controller
         }
     }
 
+    public function showStoreProductDetails(Request $request, int $storeId, int $storeProductId)
+    {
+        try {
+            $store = $this->resolveOwnedStore($request, $storeId);
+
+            if (!$store) {
+                return $this->failed('Store not found or access denied', null, 404);
+            }
+
+            $storeProduct = StoreProduct::with([
+                    'product' => fn ($productQuery) => $productQuery->with($this->productDetailsRelations()),
+                ])
+                ->where('store_id', $store->id)
+                ->find($storeProductId);
+
+            if (!$storeProduct || !$storeProduct->product) {
+                return $this->failed('Store product not found', null, 404);
+            }
+
+            $product = $storeProduct->product;
+            $productArr = $this->formatStoreProduct($storeProduct);
+            $productArr['primary_image'] = $product->primaryImage;
+            $productArr['images'] = $product->images;
+            $productArr['average_review'] = $product->averageReview;
+            $productArr['shop'] = $product->shop;
+            $productArr['related'] = $product->related;
+            $productArr['product_attributes'] = $product->productAttributes;
+            $productArr['seo'] = $product->seo;
+
+            return $this->success('Store product fetched successfully', $productArr);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
     public function update(Request $request, int $storeId, int $storeProductId)
     {
         try {

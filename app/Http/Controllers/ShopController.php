@@ -150,7 +150,14 @@ class ShopController extends Controller
 
             if ($request->filled('search')) {
                 $search = trim((string) $request->search);
-                $query->where('shop_name', 'like', '%' . $search . '%');
+                $query->where(function ($searchQuery) use ($search) {
+                    $searchQuery->where('shop_name', 'like', '%' . $search . '%')
+                        ->orWhere('name', 'like', '%' . $search . '%')
+                        ->orWhere('phone', 'like', '%' . $search . '%')
+                        ->orWhere('slug', 'like', '%' . $search . '%')
+                        ->orWhere('code', 'like', '%' . $search . '%')
+                        ->orWhere('email', 'like', '%' . $search . '%');
+                });
             }
 
             $query->latest();
