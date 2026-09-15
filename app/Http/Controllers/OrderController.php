@@ -52,7 +52,7 @@ class OrderController extends Controller
 
     /**
      * POST /orders/checkout
-        * Body: user_id, is_outside_dhaka, customer_name, customer_phone, shipping_address, zone, district, area, lat, lon, note
+        * Body: user_id, is_outside_dhaka (0: Inside Dhaka, 1: Outside Dhaka, 2: Free/No Delivery Charge), customer_name, customer_phone, shipping_address, zone, district, area, lat, lon, note
      *
      * Converts ACTIVE cart -> order + order_items in ONE DB transaction
      * and splits the delivery charge across all shop orders.
@@ -62,7 +62,8 @@ class OrderController extends Controller
         try {
             $validated = $request->validate([
                 'user_id' => ['required', 'integer', 'exists:users,id'],
-                'is_outside_dhaka' => ['nullable', 'integer', 'in:0,1'],
+                // is_outside_dhaka values: 0 = Inside Dhaka (60), 1 = Outside Dhaka (120), 2 = No delivery charge (0)
+                'is_outside_dhaka' => ['nullable', 'integer', 'in:0,1,2'],
                 'user_address_id' => ['nullable', 'integer',],
 
                 'customer_name' => ['nullable', 'string', 'max:255'],
@@ -324,9 +325,22 @@ class OrderController extends Controller
         }
     }
 
+    /**
+     * Resolves base shipping fee depending on location / delivery option:
+     *  0 = Inside Dhaka (60.0 Tk)
+     *  1 = Outside Dhaka (120.0 Tk)
+     *  2 = Free Delivery / No delivery charge added (0.0 Tk)
+     */
     private function resolveBaseShippingFee(array $validated): float
     {
-        return ((int) ($validated['is_outside_dhaka'] ?? 0) === 1) ? 120.0 : 60.0;
+        $locationFlag = (int) ($validated['is_outside_dhaka'] ?? 0);
+
+        // If is_outside_dhaka = 2, no delivery charge will be added
+        if ($locationFlag === 2) {
+            return 0.0;
+        }
+
+        return ($locationFlag === 1) ? 120.0 : 60.0;
     }
 
     private function resolveCartItemShopId(CartItem $cartItem): ?int
