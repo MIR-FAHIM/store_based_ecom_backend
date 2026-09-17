@@ -522,7 +522,7 @@ class UserController extends Controller
 
             $user = User::with([
                 'division', 
-'district', 'upazila', 'area', 'zone',
+'district', 'upazila',
                 'shops.logo',
                 'shops.banner',
                 'shops.currentSubscription.package',
