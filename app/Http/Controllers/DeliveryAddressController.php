@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\District;
 use App\Models\Division;
+use App\Models\Upazila;
 use App\Models\DeliveryAddress;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -162,6 +163,20 @@ class DeliveryAddressController extends Controller
             return $this->success('Districts retrieved', $districts);
         } catch (\Exception $e) {
             return $this->failed('Could not retrieve districts', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Get upazilas by district
+     */
+    public function getUpazilasByDistrict($districtId)
+    {
+        try {
+            $upazilas = Upazila::where('district_id', $districtId)->get();
+
+            return $this->success('Upazilas retrieved', $upazilas);
+        } catch (\Exception $e) {
+            return $this->failed('Could not retrieve upazilas', $e->getMessage(), 500);
         }
     }
 

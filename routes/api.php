@@ -297,6 +297,7 @@ Route::prefix('bank-accounts')->group(function () {
 Route::prefix('locations')->group(function () {
     Route::get('/divisions', [DeliveryAddressController::class, 'getDivisions']);
     Route::get('/districts/{divisionId}', [DeliveryAddressController::class, 'getDistrictsByDivision']);
+    Route::get('/upazilas/{districtId}', [DeliveryAddressController::class, 'getUpazilasByDistrict']);
 });
 
 
