@@ -11,13 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('upazilas', function (Blueprint $table) {
-            $table->unsignedInteger('id')->autoIncrement();
-            $table->unsignedInteger('district_id');
-            $table->string('name', 25);
-            $table->string('bn_name', 25);
-            $table->string('url', 50);
-        });
+        if (!Schema::hasTable('upazilas')) {
+            Schema::create('upazilas', function (Blueprint $table) {
+                $table->unsignedInteger('id')->autoIncrement();
+                $table->unsignedInteger('district_id');
+                $table->string('name', 25);
+                $table->string('bn_name', 25);
+                $table->string('url', 50);
+            });
+        }
     }
 
     /**
