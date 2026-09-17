@@ -34,6 +34,14 @@ class User extends Model
         'avatar',
         'avatar_original',
         'address',
+        'division_id',
+        'district_id',
+        'upazila_id',
+        'area_id',
+        'zone_id',
+        'lat',
+        'lon',
+        'note',
         'country',
         'state',
         'city',
@@ -68,7 +76,29 @@ class User extends Model
         'remaining_uploads' => 'integer',
         'customer_package_id' => 'integer',
         'referred_by' => 'integer',
+        'division_id' => 'integer',
+        'district_id' => 'integer',
+        'upazila_id' => 'integer',
+        'area_id' => 'integer',
+        'zone_id' => 'integer',
+        'lat' => 'float',
+        'lon' => 'float',
     ];
+
+    public function division()
+    {
+        return $this->belongsTo(Division::class, 'division_id');
+    }
+
+    public function district()
+    {
+        return $this->belongsTo(District::class, 'district_id');
+    }
+
+    public function upazila()
+    {
+        return $this->belongsTo(Upazila::class, 'upazila_id');
+    }
 
     /**
      * Self reference: who referred this user.
