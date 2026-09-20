@@ -19,6 +19,7 @@ class CartItem extends Model
         'attribute_id',
         'line_total',
         'status',
+        'note',
     ];
 
     protected $casts = [
