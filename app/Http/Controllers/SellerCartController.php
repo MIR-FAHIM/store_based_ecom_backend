@@ -484,7 +484,7 @@ class SellerCartController extends Controller
 
             DB::commit();
 
-            $order->load(['orderItems']);
+            $order->load(['items.product.primaryImage', 'orderItems']);
             return $this->success('POS Order completed successfully', $order, 201);
         } catch (\Throwable $e) {
             DB::rollBack();

@@ -67,9 +67,14 @@ class Order extends Model
     }
 
     /**
-     * Order has many order items (the truth)
+     * Order has many order items
      */
     public function items()
+    {
+        return $this->hasMany(OrderItem::class, 'order_id');
+    }
+
+    public function orderItems()
     {
         return $this->hasMany(OrderItem::class, 'order_id');
     }
