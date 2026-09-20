@@ -41,6 +41,7 @@ use App\Http\Controllers\CustomerPreferenceStoreController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\StoreQrController;
+use App\Http\Controllers\SellerCartController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -197,6 +198,16 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
     Route::get('/products/details/{storeProductId}', [SellerStoreProductController::class, 'showStoreProductDetails']);
     Route::put('/products/update/{storeProductId}', [SellerStoreProductController::class, 'update']);
     Route::delete('/products/remove/{storeProductId}', [SellerStoreProductController::class, 'remove']);
+
+    // POS Multi-Counter Cart System
+    Route::get('/pos/cart', [SellerCartController::class, 'getActiveCart']);
+    Route::post('/pos/cart/items/add', [SellerCartController::class, 'addItem']);
+    Route::put('/pos/cart/items/update/{itemId}', [SellerCartController::class, 'updateItem']);
+    Route::delete('/pos/cart/items/remove/{itemId}', [SellerCartController::class, 'removeItem']);
+    Route::post('/pos/cart/hold', [SellerCartController::class, 'holdCart']);
+    Route::get('/pos/cart/held-list', [SellerCartController::class, 'listHeldCarts']);
+    Route::post('/pos/cart/resume', [SellerCartController::class, 'resumeCart']);
+    Route::post('/pos/cart/checkout', [SellerCartController::class, 'checkoutCart']);
 });
 
 Route::prefix('stores/{storeId}/qr')->group(function () {
