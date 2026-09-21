@@ -17,12 +17,14 @@ class CustomerPreferenceStore extends Model
         'added_by',
         'added_by_type',
         'status',
+        'total_baki',
     ];
 
     protected $casts = [
         'customer_user_id' => 'integer',
         'seller_id' => 'integer',
         'added_by' => 'integer',
+        'total_baki' => 'float',
     ];
 
     public function customer()

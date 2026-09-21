@@ -32,6 +32,9 @@ class Order extends Model
         'shipping_fee',
         'discount',
         'total',
+        'paid_amount',
+        'due_amount',
+        'due_date',
         'platform',
         'user_address_id',
 
@@ -43,6 +46,9 @@ class Order extends Model
         'shipping_fee' => 'float',
         'discount' => 'float',
         'total' => 'float',
+        'paid_amount' => 'float',
+        'due_amount' => 'float',
+        'due_date' => 'date',
         'lat' => 'float',
         'lon' => 'float',
     ];

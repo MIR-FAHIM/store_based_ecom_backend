@@ -42,6 +42,7 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\StoreQrController;
 use App\Http\Controllers\SellerCartController;
+use App\Http\Controllers\CustomerBakiController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -208,6 +209,12 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
     Route::get('/pos/cart/held-list', [SellerCartController::class, 'listHeldCarts']);
     Route::post('/pos/cart/resume', [SellerCartController::class, 'resumeCart']);
     Route::post('/pos/cart/checkout', [SellerCartController::class, 'checkoutCart']);
+
+    // Customer Baki Khata & Due Management System
+    Route::post('/baki/collect', [CustomerBakiController::class, 'collectPayment']);
+    Route::post('/baki/quick-add', [CustomerBakiController::class, 'quickAddBaki']);
+    Route::get('/baki/customer/{customerId}', [CustomerBakiController::class, 'getCustomerLedger']);
+    Route::get('/baki/summary', [CustomerBakiController::class, 'getStoreBakiSummary']);
 });
 
 Route::prefix('stores/{storeId}/qr')->group(function () {

@@ -427,8 +427,14 @@ class SellerCartController extends Controller
                 'customer_id' => ['nullable', 'integer', 'exists:users,id'],
                 'customer_name' => ['nullable', 'string', 'max:255'],
                 'customer_phone' => ['nullable', 'string', 'max:50'],
+                'due_date' => ['nullable', 'date'],
                 'note' => ['nullable', 'string'],
             ]);
+
+            $store = Shops::find($storeId);
+            if (!$store) {
+                return $this->failed('Store not found', null, 404);
+            }
 
             $cart = Cart::with(['items.product', 'items.storeProduct'])
                 ->where('id', $validated['cart_id'])
@@ -439,17 +445,35 @@ class SellerCartController extends Controller
                 return $this->failed('Cart is empty or not found', null, 400);
             }
 
+            $subtotal = (float) $cart->subtotal;
+            $total = $subtotal; // In-store pickup = 0 shipping fee
+
+            $paymentMethod = $validated['payment_method'];
+            if ($paymentMethod === 'baki') {
+                $paidAmount = isset($validated['paid_amount']) ? (float) $validated['paid_amount'] : 0.0;
+            } else {
+                $paidAmount = isset($validated['paid_amount']) ? (float) $validated['paid_amount'] : $total;
+            }
+            $dueAmount = round(max(0, $total - $paidAmount), 2);
+
+            $customerId = $validated['customer_id'] ?? $cart->user_id;
+
+            if ($dueAmount > 0 && !$customerId) {
+                return $this->failed('Customer selection is required when creating a Baki or partial payment order', [
+                    'customer_id' => ['Please select a customer to maintain Baki Khata.']
+                ], 422);
+            }
+
             DB::beginTransaction();
 
             $orderNumber = 'POS-' . strtoupper(Str::random(8));
-            $subtotal = $cart->subtotal;
-            $total = $subtotal; // In-store pickup = 0 shipping fee
+            $paymentStatus = ($dueAmount <= 0) ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid');
 
             $order = Order::create([
-                'user_id' => $validated['customer_id'] ?? $cart->user_id,
+                'user_id' => $customerId,
                 'order_number' => $orderNumber,
                 'status' => 'completed',
-                'payment_status' => ($validated['payment_method'] === 'baki') ? 'unpaid' : 'paid',
+                'payment_status' => $paymentStatus,
                 'customer_name' => $validated['customer_name'] ?? $cart->customer_name ?? 'Walk-in Customer',
                 'customer_phone' => $validated['customer_phone'] ?? $cart->customer_phone,
                 'shipping_address' => 'In-Store Counter Sale',
@@ -457,6 +481,9 @@ class SellerCartController extends Controller
                 'shipping_fee' => 0.0,
                 'discount' => 0.0,
                 'total' => $total,
+                'paid_amount' => $paidAmount,
+                'due_amount' => $dueAmount,
+                'due_date' => $validated['due_date'] ?? null,
                 'platform' => 'pos',
                 'note' => $validated['note'] ?? $cart->hold_reason,
             ]);
@@ -476,6 +503,48 @@ class SellerCartController extends Controller
                 if ($item->store_product_id) {
                     StoreProduct::where('id', $item->store_product_id)->decrement('stock', $item->qty);
                 }
+            }
+
+            // Post to Customer Baki Ledger if due_amount > 0
+            if ($dueAmount > 0 && $customerId) {
+                $preference = \App\Models\CustomerPreferenceStore::where('customer_user_id', $customerId)
+                    ->where('seller_id', $store->user_id)
+                    ->first();
+
+                if (!$preference) {
+                    $preference = \App\Models\CustomerPreferenceStore::create([
+                        'customer_user_id' => $customerId,
+                        'seller_id' => $store->user_id,
+                        'added_by' => $store->user_id,
+                        'added_by_type' => 'seller',
+                        'status' => 'active',
+                        'total_baki' => 0.00,
+                    ]);
+                }
+
+                $currentBaki = (float) ($preference->total_baki ?? 0.0);
+                $newBaki = round($currentBaki + $dueAmount, 2);
+                $staffId = $request->attributes->get('api_user')?->id;
+
+                \App\Models\CustomerLedger::create([
+                    'shop_id' => $store->id,
+                    'seller_id' => $store->user_id,
+                    'customer_id' => $customerId,
+                    'order_id' => $order->id,
+                    'type' => 'DUE',
+                    'amount' => $dueAmount,
+                    'paid_amount' => $paidAmount,
+                    'due_amount' => $dueAmount,
+                    'running_balance' => $newBaki,
+                    'payment_method' => $paymentMethod,
+                    'due_date' => $validated['due_date'] ?? null,
+                    'note' => "POS Order #{$orderNumber} (Total ৳{$total}, Paid ৳{$paidAmount})",
+                    'created_by' => $staffId,
+                ]);
+
+                $preference->update([
+                    'total_baki' => $newBaki,
+                ]);
             }
 
             $cart->update([

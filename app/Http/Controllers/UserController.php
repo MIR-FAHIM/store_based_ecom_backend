@@ -436,13 +436,13 @@ class UserController extends Controller
 
                 $query->where(function ($q) use ($like) {
                     $q->where('name', 'like', $like)
-                      ->orWhere('email', 'like', $like)
-                      ->orWhere('phone', 'like', $like)
-                      ->orWhereHas('deliveryManProfile', function ($dq) use ($like) {
-                          $dq->where('mobile', 'like', $like)
-                             ->orWhere('father_name', 'like', $like)
-                             ->orWhere('emergency_contact', 'like', $like);
-                      });
+                        ->orWhere('email', 'like', $like)
+                        ->orWhere('phone', 'like', $like)
+                        ->orWhereHas('deliveryManProfile', function ($dq) use ($like) {
+                            $dq->where('mobile', 'like', $like)
+                                ->orWhere('father_name', 'like', $like)
+                                ->orWhere('emergency_contact', 'like', $like);
+                        });
                 });
             }
 
@@ -521,8 +521,9 @@ class UserController extends Controller
             }
 
             $user = User::with([
-                'division', 
-'district', 'upazila',
+                'division',
+                'district',
+                'upazila',
                 'shops.logo',
                 'shops.banner',
                 'shops.currentSubscription.package',
