@@ -23,25 +23,75 @@ class ChatService
         private FirebaseNotificationService $firebaseNotificationService
     ) {}
 
-    public function openConversation(User $user, int $shopId): Conversation
+    public function openConversation(User $user, array|int $params): Conversation
     {
-        if (!$this->isCustomerUser($user)) {
-            throw ValidationException::withMessages([
-                'shop_id' => ['Only customers can open a new shop conversation.'],
-            ]);
+        $shopId = null;
+        $customerId = null;
+
+        if (is_numeric($params)) {
+            $shopId = (int) $params;
+            $customerId = $user->id;
+        } else {
+            $shopId = isset($params['shop_id']) && !empty($params['shop_id']) ? (int) $params['shop_id'] : null;
+            $targetUserId = (int) ($params['user_id'] ?? $params['seller_id'] ?? $params['customer_id'] ?? $params['recipient_id'] ?? 0);
+
+            if ($shopId) {
+                $shop = Shops::find($shopId);
+                if (!$shop) {
+                    throw ValidationException::withMessages(['shop_id' => ['Shop not found.']]);
+                }
+
+                if ($this->isSellerUser($user) && (int) $user->id === (int) $shop->user_id) {
+                    $customerId = $targetUserId;
+                    if (!$customerId) {
+                        throw ValidationException::withMessages(['user_id' => ['Customer user_id is required when seller opens conversation.']]);
+                    }
+                } else {
+                    $customerId = $user->id;
+                }
+            } elseif ($targetUserId > 0) {
+                $targetUser = User::find($targetUserId);
+                if (!$targetUser) {
+                    throw ValidationException::withMessages(['user_id' => ['Target user not found.']]);
+                }
+
+                if ($this->isSellerUser($user)) {
+                    $shop = Shops::where('user_id', $user->id)->first();
+                    if (!$shop) {
+                        throw ValidationException::withMessages(['user_id' => ['Seller shop not found for current user.']]);
+                    }
+                    $shopId = $shop->id;
+                    $customerId = $targetUser->id;
+                } else {
+                    $shop = Shops::where('user_id', $targetUser->id)->first();
+                    if (!$shop) {
+                        $shop = Shops::first();
+                    }
+                    if (!$shop) {
+                        throw ValidationException::withMessages(['user_id' => ['No shop found associated with target user.']]);
+                    }
+                    $shopId = $shop->id;
+                    $customerId = $user->id;
+                }
+            } else {
+                throw ValidationException::withMessages(['shop_id' => ['Please provide a shop_id or user_id to open a conversation.']]);
+            }
         }
 
         $shop = Shops::find($shopId);
         if (!$shop) {
-            throw ValidationException::withMessages([
-                'shop_id' => ['Shop not found.'],
-            ]);
+            throw ValidationException::withMessages(['shop_id' => ['Shop not found.']]);
+        }
+
+        $customer = User::find($customerId);
+        if (!$customer) {
+            throw ValidationException::withMessages(['user_id' => ['Customer user not found.']]);
         }
 
         return Conversation::firstOrCreate(
             [
                 'shop_id' => $shop->id,
-                'customer_id' => $user->id,
+                'customer_id' => $customer->id,
             ],
             [
                 'status' => 'active',

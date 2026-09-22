@@ -68,12 +68,20 @@ class ChatController extends Controller
     {
         try {
             $validated = $request->validate([
-                'shop_id' => ['required', 'integer', 'exists:shops,id'],
+                'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
+                'user_id' => ['nullable', 'integer', 'exists:users,id'],
+                'seller_id' => ['nullable', 'integer', 'exists:users,id'],
+                'customer_id' => ['nullable', 'integer', 'exists:users,id'],
+                'recipient_id' => ['nullable', 'integer', 'exists:users,id'],
             ]);
+
+            if (empty($validated['shop_id']) && empty($validated['user_id']) && empty($validated['seller_id']) && empty($validated['customer_id']) && empty($validated['recipient_id'])) {
+                return $this->failed('Please provide either shop_id or user_id to open a conversation.', null, 422);
+            }
 
             $conversation = $this->chatService->openConversation(
                 $this->authenticatedUser($request),
-                (int) $validated['shop_id']
+                $validated
             );
 
             return $this->success('Conversation opened successfully', (new ConversationResource($conversation))->resolve($request), 201);
