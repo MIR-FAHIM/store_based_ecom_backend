@@ -14,6 +14,7 @@ use App\Models\Review;
 use App\Models\CustomerLedger;
 use App\Models\CustomerPreferenceStore;
 use App\Models\StoreCashLog;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class ReportController extends Controller
