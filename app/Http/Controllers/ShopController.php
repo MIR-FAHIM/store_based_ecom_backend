@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Shops;
 use App\Models\User;
+use App\Models\StoreProduct;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -135,9 +136,6 @@ class ShopController extends Controller
             $query = Shops::query()
                 ->withCount([
                     'reviews as total_reviews' => fn ($reviewQuery) => $reviewQuery->where('status', true),
-                    'products as total_products_count',
-                    'products as active_products_count' => fn ($pq) => $pq->where('published', 1),
-                    'products as inactive_products_count' => fn ($pq) => $pq->where('published', 0),
                 ])
                 ->withAvg([
                     'reviews as average_review_rating' => fn ($reviewQuery) => $reviewQuery->where('status', true),
@@ -194,10 +192,12 @@ class ShopController extends Controller
             'total_reviews' => (int) ($shop->total_reviews ?? 0),
         ]);
 
-        if (isset($shop->total_products_count)) {
-            $totalProducts = (int) $shop->total_products_count;
-            $activeProducts = (int) ($shop->active_products_count ?? 0);
-            $inactiveProducts = (int) ($shop->inactive_products_count ?? 0);
+        $storeProductCount = StoreProduct::where('store_id', $shop->id)->count();
+
+        if ($storeProductCount > 0) {
+            $totalProducts = $storeProductCount;
+            $activeProducts = StoreProduct::where('store_id', $shop->id)->where('is_active', true)->count();
+            $inactiveProducts = StoreProduct::where('store_id', $shop->id)->where('is_active', false)->count();
         } else {
             $productQuery = Product::where(function ($q) use ($shop) {
                 $q->where('shop_id', $shop->id);
@@ -205,19 +205,22 @@ class ShopController extends Controller
                     $q->orWhere('user_id', $shop->user_id);
                 }
             });
+
             $totalProducts = (clone $productQuery)->count();
-            $activeProducts = (clone $productQuery)->where('published', 1)->count();
-            $inactiveProducts = (clone $productQuery)->where('published', 0)->count();
+            $activeProducts = (clone $productQuery)->where(function ($pq) {
+                $pq->where('published', 1)->orWhere('status', 'active');
+            })->count();
+            $inactiveProducts = max(0, $totalProducts - $activeProducts);
         }
 
-        $productCountObj = [
-            'total' => $totalProducts,
-            'active' => $activeProducts,
-            'inactive' => $inactiveProducts,
-        ];
+        $shop->setAttribute('products_count', [
+            'total' => (int) $totalProducts,
+            'active' => (int) $activeProducts,
+            'inactive' => (int) $inactiveProducts,
+        ]);
 
-        $shop->setAttribute('product_count', $productCountObj);
-        $shop->setAttribute('products_count', $productCountObj);
+        // Clean up internal query attributes from JSON output
+        unset($shop->total_products_count, $shop->active_products_count, $shop->inactive_products_count, $shop->product_count);
 
         $lastSubscription = $shop->latestSubscription ?? $shop->currentSubscription;
         $shop->setRelation('last_subscription', $lastSubscription);
