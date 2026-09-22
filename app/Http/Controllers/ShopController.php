@@ -207,9 +207,7 @@ class ShopController extends Controller
             });
 
             $totalProducts = (clone $productQuery)->count();
-            $activeProducts = (clone $productQuery)->where(function ($pq) {
-                $pq->where('published', 1)->orWhere('status', 'active');
-            })->count();
+            $activeProducts = (clone $productQuery)->where('published', 1)->count();
             $inactiveProducts = max(0, $totalProducts - $activeProducts);
         }
 
