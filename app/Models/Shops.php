@@ -93,6 +93,11 @@ class Shops extends Model
         return $this->hasMany(StoreProduct::class, 'store_id');
     }
 
+    public function products()
+    {
+        return $this->hasMany(Product::class, 'shop_id');
+    }
+
     public function mediaResourceOrders()
     {
         return $this->hasMany(MediaResourceOrder::class, 'store_id');

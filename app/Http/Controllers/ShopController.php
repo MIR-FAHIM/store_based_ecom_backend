@@ -135,6 +135,9 @@ class ShopController extends Controller
             $query = Shops::query()
                 ->withCount([
                     'reviews as total_reviews' => fn ($reviewQuery) => $reviewQuery->where('status', true),
+                    'products as total_products_count',
+                    'products as active_products_count' => fn ($pq) => $pq->where('published', 1),
+                    'products as inactive_products_count' => fn ($pq) => $pq->where('published', 0),
                 ])
                 ->withAvg([
                     'reviews as average_review_rating' => fn ($reviewQuery) => $reviewQuery->where('status', true),
@@ -190,6 +193,31 @@ class ShopController extends Controller
             'average_review_rating' => $averageRating !== null ? round((float) $averageRating, 2) : 0,
             'total_reviews' => (int) ($shop->total_reviews ?? 0),
         ]);
+
+        if (isset($shop->total_products_count)) {
+            $totalProducts = (int) $shop->total_products_count;
+            $activeProducts = (int) ($shop->active_products_count ?? 0);
+            $inactiveProducts = (int) ($shop->inactive_products_count ?? 0);
+        } else {
+            $productQuery = Product::where(function ($q) use ($shop) {
+                $q->where('shop_id', $shop->id);
+                if (!empty($shop->user_id)) {
+                    $q->orWhere('user_id', $shop->user_id);
+                }
+            });
+            $totalProducts = (clone $productQuery)->count();
+            $activeProducts = (clone $productQuery)->where('published', 1)->count();
+            $inactiveProducts = (clone $productQuery)->where('published', 0)->count();
+        }
+
+        $productCountObj = [
+            'total' => $totalProducts,
+            'active' => $activeProducts,
+            'inactive' => $inactiveProducts,
+        ];
+
+        $shop->setAttribute('product_count', $productCountObj);
+        $shop->setAttribute('products_count', $productCountObj);
 
         $lastSubscription = $shop->latestSubscription ?? $shop->currentSubscription;
         $shop->setRelation('last_subscription', $lastSubscription);
