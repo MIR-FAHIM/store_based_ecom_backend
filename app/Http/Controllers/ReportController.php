@@ -310,6 +310,9 @@ class ReportController extends Controller
         $endDateStr = $end->toDateString();
 
         $shop = Shops::find($shopId);
+        $hasPaymentMethod = Schema::hasColumn('orders', 'payment_method');
+        $hasOrderType = Schema::hasColumn('orders', 'order_type');
+        $hasShopIdInOrders = Schema::hasColumn('orders', 'shop_id');
 
         // 1. OPENING CASH
         $openingCashLog = StoreCashLog::where('shop_id', $shopId)
@@ -319,26 +322,61 @@ class ReportController extends Controller
             ->first();
         $openingCash = $openingCashLog ? (float) $openingCashLog->amount : 0.0;
 
+        // Base Orders Query for Shop
+        $baseOrderQuery = Order::whereBetween('created_at', [$start, $end])
+            ->where(function ($q) use ($shopId, $hasShopIdInOrders) {
+                if ($hasShopIdInOrders) {
+                    $q->where('shop_id', $shopId)
+                      ->orWhereHas('items', fn ($iq) => $iq->where('shop_id', $shopId));
+                } else {
+                    $q->whereHas('items', fn ($iq) => $iq->where('shop_id', $shopId));
+                }
+            });
+
         // 2. POS CASH SALES (Orders placed in store with cash or paid_amount)
-        $posCashSales = (float) Order::where('shop_id', $shopId)
-            ->where('order_type', 'pos')
-            ->whereBetween('created_at', [$start, $end])
-            ->where(function ($q) {
-                $q->where('payment_method', 'cash')
-                  ->orWhere('paid_amount', '>', 0);
+        $posCashSalesQuery = (clone $baseOrderQuery)
+            ->where(function ($q) use ($hasOrderType) {
+                if ($hasOrderType) {
+                    $q->where('order_type', 'pos')
+                      ->orWhere('platform', 'pos');
+                } else {
+                    $q->where('platform', 'pos');
+                }
             })
-            ->sum(DB::raw("CASE WHEN payment_method = 'cash' THEN grand_total ELSE paid_amount END"));
+            ->where(function ($q) use ($hasPaymentMethod) {
+                if ($hasPaymentMethod) {
+                    $q->where('payment_method', 'cash')
+                      ->orWhere('paid_amount', '>', 0);
+                } else {
+                    $q->where('payment_status', 'paid')
+                      ->orWhere('paid_amount', '>', 0);
+                }
+            });
+
+        $posCashSalesSumExpression = $hasPaymentMethod 
+            ? "CASE WHEN payment_method = 'cash' THEN total ELSE paid_amount END" 
+            : "CASE WHEN payment_status = 'paid' THEN total ELSE paid_amount END";
+
+        $posCashSales = (float) $posCashSalesQuery->sum(DB::raw($posCashSalesSumExpression));
 
         // 3. ONLINE APP COD CASH COLLECTED
-        $onlineCodCash = (float) Order::where('shop_id', $shopId)
-            ->where(function ($q) {
-                $q->where('order_type', 'online')
-                  ->orWhereNull('order_type');
+        $onlineCodCashQuery = (clone $baseOrderQuery)
+            ->where(function ($q) use ($hasOrderType) {
+                if ($hasOrderType) {
+                    $q->where('order_type', 'online')
+                      ->orWhereNull('order_type');
+                } else {
+                    $q->where('platform', '!=', 'pos')
+                      ->orWhereNull('platform');
+                }
             })
-            ->whereBetween('created_at', [$start, $end])
-            ->where('payment_method', 'cash')
-            ->where('payment_status', 'paid')
-            ->sum('grand_total');
+            ->where('payment_status', 'paid');
+
+        if ($hasPaymentMethod) {
+            $onlineCodCashQuery->where('payment_method', 'cash');
+        }
+
+        $onlineCodCash = (float) $onlineCodCashQuery->sum('total');
 
         // 4. BAKI RECOVERED IN CASH
         $bakiRecoveredCash = (float) CustomerLedger::where('shop_id', $shopId)
@@ -357,10 +395,13 @@ class ReportController extends Controller
             ->sum('amount');
 
         // 6. DIGITAL PAYMENTS (bKash, Nagad, Card, Bank)
-        $digitalPaymentsOrders = (float) Order::where('shop_id', $shopId)
-            ->whereBetween('created_at', [$start, $end])
-            ->whereIn('payment_method', ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer'])
-            ->sum('grand_total');
+        $digitalPaymentsQuery = (clone $baseOrderQuery);
+        if ($hasPaymentMethod) {
+            $digitalPaymentsQuery->whereIn('payment_method', ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer']);
+        } else {
+            $digitalPaymentsQuery->where('payment_status', 'paid')->where('platform', 'online');
+        }
+        $digitalPaymentsOrders = (float) $digitalPaymentsQuery->sum('total');
 
         $digitalPaymentsLedger = (float) CustomerLedger::where('shop_id', $shopId)
             ->where('type', 'PAYMENT')
@@ -414,8 +455,6 @@ class ReportController extends Controller
             ->sum('total_baki');
 
         // CALCULATE EXPECTED CASH IN DRAWER
-        // Cash In = Opening + POS Cash + Online COD Cash + Baki Cash + Quick Cash + Drawer Adj (In)
-        // Cash Out = Shop Expenses + Refunds + Drawer Adj (Out)
         $totalCashIn = round($openingCash + $posCashSales + $onlineCodCash + $bakiRecoveredCash + $quickCashSales + $drawerAdjIn, 2);
         $totalCashOut = round($shopExpenses + $customerRefunds + $drawerAdjOut, 2);
         $expectedCashInDrawer = round($totalCashIn - $totalCashOut, 2);

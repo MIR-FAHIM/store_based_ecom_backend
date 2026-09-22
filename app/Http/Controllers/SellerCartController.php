@@ -474,6 +474,8 @@ class SellerCartController extends Controller
                 'order_number' => $orderNumber,
                 'status' => 'completed',
                 'payment_status' => $paymentStatus,
+                'payment_method' => $paymentMethod,
+                'order_type' => 'pos',
                 'customer_name' => $validated['customer_name'] ?? $cart->customer_name ?? 'Walk-in Customer',
                 'customer_phone' => $validated['customer_phone'] ?? $cart->customer_phone,
                 'shipping_address' => 'In-Store Counter Sale',
