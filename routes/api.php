@@ -43,6 +43,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\StoreQrController;
 use App\Http\Controllers\SellerCartController;
 use App\Http\Controllers\CustomerBakiController;
+use App\Http\Controllers\StoreCashLogController;
 
 // Authentication endpoints hlw
 Route::post('/auth/login', [AuthController::class, 'login'])->withoutMiddleware('token');
@@ -215,6 +216,15 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
     Route::post('/baki/quick-add', [CustomerBakiController::class, 'quickAddBaki']);
     Route::get('/baki/customer/{customerId}', [CustomerBakiController::class, 'getCustomerLedger']);
     Route::get('/baki/summary', [CustomerBakiController::class, 'getStoreBakiSummary']);
+
+    // Cash Logs & Drawer Adjustments
+    Route::post('/cash-logs/opening', [StoreCashLogController::class, 'setOpeningCash']);
+    Route::post('/cash-logs/quick-cash', [StoreCashLogController::class, 'addQuickCash']);
+    Route::post('/cash-logs/expense', [StoreCashLogController::class, 'addExpense']);
+    Route::post('/cash-logs/adjust-drawer', [StoreCashLogController::class, 'adjustDrawer']);
+
+    // Financial & Cash Flow Summary Report
+    Route::get('/reports/summary', [ReportController::class, 'shopSummary']);
 });
 
 Route::prefix('stores/{storeId}/qr')->group(function () {

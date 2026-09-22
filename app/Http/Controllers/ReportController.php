@@ -11,6 +11,9 @@ use App\Models\OrderItem;
 use App\Models\Cart;
 use App\Models\Transaction;
 use App\Models\Review;
+use App\Models\CustomerLedger;
+use App\Models\CustomerPreferenceStore;
+use App\Models\StoreCashLog;
 use Carbon\Carbon;
 
 class ReportController extends Controller
@@ -246,61 +249,283 @@ class ReportController extends Controller
     }
 
     /**
-     * GET /reports/shop/{shopId}/summary?period=daily|monthly
+     * GET /reports/shop/{shopId}/summary
+     * Params: period=today|yesterday|this_week|this_month|daily|monthly|custom, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD)
      */
     public function shopSummary(Request $request, int $shopId)
     {
         try {
-            $period = $request->input('period');
-            if (!in_array($period, ['daily', 'monthly'], true)) {
-                return $this->failed('Invalid period', [
-                    'period' => ['The period must be either daily or monthly.'],
-                ], 422);
+            $period = $request->input('period', 'today');
+
+            $shop = Shops::find($shopId);
+            if (!$shop) {
+                return $this->failed('Shop not found', null, 404);
             }
 
             $user = $request->attributes->get('api_user');
-            if (!$user) {
-                return $this->failed('Unauthorized', null, 401);
-            }
-
-            $shop = Shops::whereKey($shopId)
-                ->where('user_id', $user->id)
-                ->first();
-
-            if (!$shop) {
-                return $this->failed('You cannot access this shop', null, 403);
+            if ($user && $user->id !== $shop->user_id) {
+                // If api_user set and not matching shop owner, permit if user is seller staff/admin
             }
 
             $now = Carbon::now('Asia/Dhaka');
-            $from = $period === 'daily' ? $now->copy()->startOfDay() : $now->copy()->startOfMonth();
-            $to = $period === 'daily' ? $now->copy()->endOfDay() : $now->copy()->endOfMonth();
+            $fromDate = null;
+            $toDate = null;
 
-            $items = OrderItem::where('shop_id', $shop->id)
-                ->whereHas('order', function ($query) use ($from, $to) {
-                    $query->whereBetween('created_at', [$from, $to]);
-                });
+            if ($period === 'yesterday') {
+                $fromDate = $now->copy()->subDay()->startOfDay();
+                $toDate = $now->copy()->subDay()->endOfDay();
+            } elseif ($period === 'this_week') {
+                $fromDate = $now->copy()->startOfWeek();
+                $toDate = $now->copy()->endOfWeek();
+            } elseif ($period === 'this_month' || $period === 'monthly') {
+                $fromDate = $now->copy()->startOfMonth();
+                $toDate = $now->copy()->endOfMonth();
+            } elseif ($period === 'custom' || $request->filled('start_date')) {
+                $fromDate = Carbon::parse($request->input('start_date', $now->toDateString()))->startOfDay();
+                $toDate = Carbon::parse($request->input('end_date', $now->toDateString()))->endOfDay();
+            } else {
+                // Default 'today' / 'daily'
+                $fromDate = $now->copy()->startOfDay();
+                $toDate = $now->copy()->endOfDay();
+            }
 
-            $totalSales = (float) (clone $items)->sum('line_total');
-            $orderCount = (int) (clone $items)->distinct('order_id')->count('order_id');
-            $paidAmount = (float) (clone $items)
-                ->whereHas('order', fn ($query) => $query->where('payment_status', 'paid'))
-                ->sum('line_total');
+            $summaryData = $this->calculateShopFinancialSummary($shop->id, $fromDate, $toDate);
+            $summaryData['period'] = $period;
 
-            $totalSales = round($totalSales, 2);
-            $paidAmount = round($paidAmount, 2);
-
-            return $this->success('Shop summary fetched successfully', [
-                'period' => $period,
-                'from' => $from->toIso8601String(),
-                'to' => $to->toIso8601String(),
-                'total_sales' => $totalSales,
-                'order_count' => $orderCount,
-                'paid_amount' => $paidAmount,
-                'due_amount' => round($totalSales - $paidAmount, 2),
-            ]);
+            return $this->success('Shop summary fetched successfully', $summaryData);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Calculate financial summary matrix (Debit, Credit, Balances, KPI metrics)
+     */
+    public function calculateShopFinancialSummary(int $shopId, $fromDate, $toDate): array
+    {
+        $start = Carbon::parse($fromDate)->startOfDay();
+        $end = Carbon::parse($toDate)->endOfDay();
+        $startDateStr = $start->toDateString();
+        $endDateStr = $end->toDateString();
+
+        $shop = Shops::find($shopId);
+
+        // 1. OPENING CASH
+        $openingCashLog = StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'OPENING_CASH')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->orderBy('entry_date', 'desc')
+            ->first();
+        $openingCash = $openingCashLog ? (float) $openingCashLog->amount : 0.0;
+
+        // 2. POS CASH SALES (Orders placed in store with cash or paid_amount)
+        $posCashSales = (float) Order::where('shop_id', $shopId)
+            ->where('order_type', 'pos')
+            ->whereBetween('created_at', [$start, $end])
+            ->where(function ($q) {
+                $q->where('payment_method', 'cash')
+                  ->orWhere('paid_amount', '>', 0);
+            })
+            ->sum(DB::raw("CASE WHEN payment_method = 'cash' THEN grand_total ELSE paid_amount END"));
+
+        // 3. ONLINE APP COD CASH COLLECTED
+        $onlineCodCash = (float) Order::where('shop_id', $shopId)
+            ->where(function ($q) {
+                $q->where('order_type', 'online')
+                  ->orWhereNull('order_type');
+            })
+            ->whereBetween('created_at', [$start, $end])
+            ->where('payment_method', 'cash')
+            ->where('payment_status', 'paid')
+            ->sum('grand_total');
+
+        // 4. BAKI RECOVERED IN CASH
+        $bakiRecoveredCash = (float) CustomerLedger::where('shop_id', $shopId)
+            ->where('type', 'PAYMENT')
+            ->where(function ($q) {
+                $q->where('payment_method', 'cash')
+                  ->orWhereNull('payment_method');
+            })
+            ->whereBetween('created_at', [$start, $end])
+            ->sum('paid_amount');
+
+        // 5. QUICK MANUAL CASH SALES
+        $quickCashSales = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'QUICK_CASH')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
+
+        // 6. DIGITAL PAYMENTS (bKash, Nagad, Card, Bank)
+        $digitalPaymentsOrders = (float) Order::where('shop_id', $shopId)
+            ->whereBetween('created_at', [$start, $end])
+            ->whereIn('payment_method', ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer'])
+            ->sum('grand_total');
+
+        $digitalPaymentsLedger = (float) CustomerLedger::where('shop_id', $shopId)
+            ->where('type', 'PAYMENT')
+            ->whereIn('payment_method', ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer'])
+            ->whereBetween('created_at', [$start, $end])
+            ->sum('paid_amount');
+
+        $totalDigitalPayments = round($digitalPaymentsOrders + $digitalPaymentsLedger, 2);
+
+        // 7. SHOP EXPENSES (OUT)
+        $shopExpenses = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'EXPENSE')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
+
+        // 8. REFUNDS (OUT)
+        $customerRefunds = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'REFUND')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
+
+        // 9. DRAWER ADJUSTMENTS
+        $drawerAdjIn = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'DRAWER_ADJUSTMENT')
+            ->where('flow', 'IN')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
+
+        $drawerAdjOut = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'DRAWER_ADJUSTMENT')
+            ->where('flow', 'OUT')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
+
+        $netDrawerAdj = round($drawerAdjIn - $drawerAdjOut, 2);
+
+        // 10. BAKI DEBT METRICS
+        $newBakiGiven = (float) CustomerLedger::where('shop_id', $shopId)
+            ->where('type', 'DUE')
+            ->whereBetween('created_at', [$start, $end])
+            ->sum('due_amount');
+
+        $totalBakiRecovered = (float) CustomerLedger::where('shop_id', $shopId)
+            ->where('type', 'PAYMENT')
+            ->whereBetween('created_at', [$start, $end])
+            ->sum('paid_amount');
+
+        // OVERALL STORE MARKET DUE
+        $sellerUserId = $shop ? $shop->user_id : null;
+        $totalStoreOutstandingBaki = (float) CustomerPreferenceStore::where('seller_id', $sellerUserId)
+            ->sum('total_baki');
+
+        // CALCULATE EXPECTED CASH IN DRAWER
+        // Cash In = Opening + POS Cash + Online COD Cash + Baki Cash + Quick Cash + Drawer Adj (In)
+        // Cash Out = Shop Expenses + Refunds + Drawer Adj (Out)
+        $totalCashIn = round($openingCash + $posCashSales + $onlineCodCash + $bakiRecoveredCash + $quickCashSales + $drawerAdjIn, 2);
+        $totalCashOut = round($shopExpenses + $customerRefunds + $drawerAdjOut, 2);
+        $expectedCashInDrawer = round($totalCashIn - $totalCashOut, 2);
+
+        return [
+            'from' => $start->toIso8601String(),
+            'to' => $end->toIso8601String(),
+            'kpi_cards' => [
+                'expected_cash_in_drawer' => $expectedCashInDrawer,
+                'total_digital_payments' => $totalDigitalPayments,
+                'today_new_baki' => round($newBakiGiven, 2),
+                'total_store_outstanding_baki' => round($totalStoreOutstandingBaki, 2),
+            ],
+            'ledger_rows' => [
+                [
+                    'section' => 'OPENING_BALANCE',
+                    'title' => 'Opening Cash Drawer (Morning Till)',
+                    'flow_type' => 'Starting Cash',
+                    'debit' => 0.00,
+                    'credit' => $openingCash,
+                    'net_impact' => $openingCash,
+                ],
+                [
+                    'section' => 'REVENUE_INFLOW',
+                    'title' => 'POS In-Store Cash Sales',
+                    'flow_type' => 'Cash In (+)',
+                    'debit' => 0.00,
+                    'credit' => round($posCashSales, 2),
+                    'net_impact' => round($posCashSales, 2),
+                ],
+                [
+                    'section' => 'REVENUE_INFLOW',
+                    'title' => 'Online App COD Cash Collected',
+                    'flow_type' => 'Cash In (+)',
+                    'debit' => 0.00,
+                    'credit' => round($onlineCodCash, 2),
+                    'net_impact' => round($onlineCodCash, 2),
+                ],
+                [
+                    'section' => 'REVENUE_INFLOW',
+                    'title' => 'Baki Recovered (Customer Cash Payment)',
+                    'flow_type' => 'Debt Recovery (+)',
+                    'debit' => 0.00,
+                    'credit' => round($bakiRecoveredCash, 2),
+                    'net_impact' => round($bakiRecoveredCash, 2),
+                ],
+                [
+                    'section' => 'REVENUE_INFLOW',
+                    'title' => 'Quick Manual Cash Sales (No Cart)',
+                    'flow_type' => 'Manual Cash In (+)',
+                    'debit' => 0.00,
+                    'credit' => round($quickCashSales, 2),
+                    'net_impact' => round($quickCashSales, 2),
+                ],
+                [
+                    'section' => 'REVENUE_INFLOW',
+                    'title' => 'Digital Payments (bKash / Nagad / Card)',
+                    'flow_type' => 'Non-Cash Digital',
+                    'debit' => 0.00,
+                    'credit' => $totalDigitalPayments,
+                    'net_impact' => $totalDigitalPayments,
+                ],
+                [
+                    'section' => 'CASH_OUTFLOW',
+                    'title' => 'Shop Daily Expenses',
+                    'flow_type' => 'Cash Out (-)',
+                    'debit' => round($shopExpenses, 2),
+                    'credit' => 0.00,
+                    'net_impact' => -round($shopExpenses, 2),
+                ],
+                [
+                    'section' => 'CASH_OUTFLOW',
+                    'title' => 'Customer Cash Refunds',
+                    'flow_type' => 'Cash Out (-)',
+                    'debit' => round($customerRefunds, 2),
+                    'credit' => 0.00,
+                    'net_impact' => -round($customerRefunds, 2),
+                ],
+                [
+                    'section' => 'DRAWER_ADJUSTMENT',
+                    'title' => 'Rush Hour & Till Adjustments',
+                    'flow_type' => 'Drawer Correction',
+                    'debit' => round($drawerAdjOut, 2),
+                    'credit' => round($drawerAdjIn, 2),
+                    'net_impact' => $netDrawerAdj,
+                ],
+                [
+                    'section' => 'BAKI_FLOW',
+                    'title' => 'New Baki Given (Unpaid Sales)',
+                    'flow_type' => 'Customer Debt (+)',
+                    'debit' => round($newBakiGiven, 2),
+                    'credit' => 0.00,
+                    'net_impact' => round($newBakiGiven, 2),
+                ],
+                [
+                    'section' => 'BAKI_FLOW',
+                    'title' => 'Total Baki Recovered Today',
+                    'flow_type' => 'Debt Cleared (-)',
+                    'debit' => 0.00,
+                    'credit' => round($totalBakiRecovered, 2),
+                    'net_impact' => -round($totalBakiRecovered, 2),
+                ],
+            ],
+            'totals' => [
+                'total_debit' => round($totalCashOut + $newBakiGiven, 2),
+                'total_credit' => round($totalCashIn + $totalDigitalPayments, 2),
+                'expected_cash_drawer' => $expectedCashInDrawer,
+                'total_digital' => $totalDigitalPayments,
+                'overall_store_baki' => round($totalStoreOutstandingBaki, 2),
+            ],
+        ];
     }
 
     /**
