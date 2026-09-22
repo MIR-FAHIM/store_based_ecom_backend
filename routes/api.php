@@ -225,6 +225,9 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
 
     // Financial & Cash Flow Summary Report
     Route::get('/reports/summary', [ReportController::class, 'shopSummary']);
+
+    // Pending Order Count
+    Route::get('/orders/pending-count', [OrderController::class, 'getPendingOrderCount']);
 });
 
 Route::prefix('stores/{storeId}/qr')->group(function () {
@@ -284,6 +287,7 @@ Route::prefix('carts')->group(function () {
 Route::prefix('orders')->group(function () {
     Route::post('/checkout', [OrderController::class, 'checkout']);
 
+    Route::get('/pending-count/{shopId?}', [OrderController::class, 'getPendingOrderCount'])->withoutMiddleware('token');
     Route::get('/list/{userId}', [OrderController::class, 'listOrdersByUser']);
     Route::get('/all/orders', [OrderController::class, 'allOrders']);
     Route::get('/orderstatus', [OrderStatusController::class, 'listOrderStatuses']);

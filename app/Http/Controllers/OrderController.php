@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 
@@ -766,6 +767,70 @@ class OrderController extends Controller
             return $this->success('Order item status updated successfully', $item);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /orders/pending-count
+     * GET /orders/pending-count/{shopId}
+     * GET /seller/stores/{storeId}/orders/pending-count
+     * Params: shop_id, user_id, customer_id, vendor_id, status
+     */
+    public function getPendingOrderCount(Request $request, $shopId = null)
+    {
+        try {
+            $shopId = (int) ($shopId ?: $request->route('shopId') ?: $request->route('storeId') ?: $request->route('shop_id') ?: $request->get('shop_id'));
+            $userId = (int) ($request->get('user_id') ?: $request->get('customer_id'));
+            $vendorId = (int) $request->get('vendor_id');
+            $targetStatus = strtolower((string) $request->get('status', 'pending'));
+
+            $hasShopIdColumn = Schema::hasColumn('orders', 'shop_id');
+
+            $query = Order::query();
+
+            // Filter by Status
+            $query->where(function ($q) use ($targetStatus) {
+                $q->where('status', $targetStatus)
+                  ->orWhere('status', strtolower($targetStatus));
+            });
+
+            // Filter by Shop
+            if ($shopId > 0) {
+                $query->where(function ($q) use ($shopId, $hasShopIdColumn) {
+                    if ($hasShopIdColumn) {
+                        $q->where('shop_id', $shopId)
+                          ->orWhereHas('items', fn ($iq) => $iq->where('shop_id', $shopId));
+                    } else {
+                        $q->whereHas('items', fn ($iq) => $iq->where('shop_id', $shopId));
+                    }
+                });
+            }
+
+            // Filter by Vendor (User ID of Shop Owner)
+            if ($vendorId > 0) {
+                $vendorShopIds = Shops::where('user_id', $vendorId)->pluck('id');
+                if ($vendorShopIds->isNotEmpty()) {
+                    $query->whereHas('items', fn ($iq) => $iq->whereIn('shop_id', $vendorShopIds));
+                }
+            }
+
+            // Filter by Customer/User
+            if ($userId > 0) {
+                $query->where('user_id', $userId);
+            }
+
+            $count = (int) $query->count();
+
+            return $this->success('Pending order count fetched successfully', [
+                'pending_order_count' => $count,
+                'pending_orders_count' => $count,
+                'count' => $count,
+                'status' => $targetStatus,
+                'shop_id' => $shopId > 0 ? $shopId : null,
+                'user_id' => $userId > 0 ? $userId : null,
+            ]);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
