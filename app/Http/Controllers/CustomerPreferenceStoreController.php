@@ -359,7 +359,7 @@ class CustomerPreferenceStoreController extends Controller
                     },
                 ])
                 ->where('seller_id', $sellerId)
-                ->where('status', 'active')
+               
                 ->latest()
                 ->paginate($perPage);
 
