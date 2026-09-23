@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
 use Throwable;
 
 class ChatService
@@ -629,5 +630,164 @@ class ChatService
 
         return in_array($role, ['customer', 'user'], true)
             || in_array($userType, ['customer', 'user'], true);
+    }
+
+    /**
+     * Admin Chat Report: Inboxes opened, Message volume, Customer vs Shop messages, Daily timeline, Top shops.
+     */
+    public function chatReport(array $params, ?User $user = null): array
+    {
+        $now = Carbon::now('Asia/Dhaka');
+        $period = $params['period'] ?? 'last_7_days';
+
+        $fromDate = null;
+        $toDate = null;
+
+        if ($period === 'today') {
+            $fromDate = $now->copy()->startOfDay();
+            $toDate = $now->copy()->endOfDay();
+        } elseif ($period === 'yesterday') {
+            $fromDate = $now->copy()->subDay()->startOfDay();
+            $toDate = $now->copy()->subDay()->endOfDay();
+        } elseif ($period === 'last_30_days') {
+            $fromDate = $now->copy()->subDays(29)->startOfDay();
+            $toDate = $now->copy()->endOfDay();
+        } elseif ($period === 'this_month') {
+            $fromDate = $now->copy()->startOfMonth();
+            $toDate = $now->copy()->endOfMonth();
+        } elseif ($period === 'custom' || isset($params['start_date'])) {
+            $fromDate = Carbon::parse($params['start_date'] ?? $now->toDateString())->startOfDay();
+            $toDate = Carbon::parse($params['end_date'] ?? $now->toDateString())->endOfDay();
+        } else {
+            // Default: 'last_7_days'
+            $fromDate = $now->copy()->subDays(6)->startOfDay();
+            $toDate = $now->copy()->endOfDay();
+        }
+
+        $shopIdFilter = isset($params['shop_id']) && !empty($params['shop_id']) ? (int) $params['shop_id'] : null;
+
+        // Base queries
+        $conversationQuery = Conversation::query();
+        $messageQuery = ConversationMessage::query();
+
+        if ($shopIdFilter) {
+            $conversationQuery->where('shop_id', $shopIdFilter);
+            $messageQuery->whereHas('conversation', fn ($cq) => $cq->where('shop_id', $shopIdFilter));
+        }
+
+        // 1. OVERVIEW TOTALS (ALL TIME)
+        $totalInboxesAllTime = (clone $conversationQuery)->count();
+        $totalMessagesAllTime = (clone $messageQuery)->count();
+        $totalShopsWithChats = (clone $conversationQuery)->distinct('shop_id')->count('shop_id');
+        $totalCustomersWithChats = (clone $conversationQuery)->distinct('customer_id')->count('customer_id');
+
+        // 2. TODAY'S SUMMARY
+        $todayStart = $now->copy()->startOfDay();
+        $todayEnd = $now->copy()->endOfDay();
+
+        $todayInboxesOpened = (clone $conversationQuery)->whereBetween('created_at', [$todayStart, $todayEnd])->count();
+        $todayTotalMessages = (clone $messageQuery)->whereBetween('created_at', [$todayStart, $todayEnd])->count();
+        $todayCustomerMessages = (clone $messageQuery)->whereBetween('created_at', [$todayStart, $todayEnd])
+            ->where('sender_type', ConversationMessage::SENDER_CUSTOMER)
+            ->count();
+        $todayShopMessages = (clone $messageQuery)->whereBetween('created_at', [$todayStart, $todayEnd])
+            ->where('sender_type', ConversationMessage::SENDER_SHOP)
+            ->count();
+        $todayActiveConversations = (clone $messageQuery)->whereBetween('created_at', [$todayStart, $todayEnd])
+            ->distinct('conversation_id')
+            ->count('conversation_id');
+
+        // 3. PERIOD SUMMARY
+        $inboxesInPeriod = (clone $conversationQuery)->whereBetween('created_at', [$fromDate, $toDate])->count();
+        $totalMessagesInPeriod = (clone $messageQuery)->whereBetween('created_at', [$fromDate, $toDate])->count();
+        $customerMessagesInPeriod = (clone $messageQuery)->whereBetween('created_at', [$fromDate, $toDate])
+            ->where('sender_type', ConversationMessage::SENDER_CUSTOMER)
+            ->count();
+        $shopMessagesInPeriod = (clone $messageQuery)->whereBetween('created_at', [$fromDate, $toDate])
+            ->where('sender_type', ConversationMessage::SENDER_SHOP)
+            ->count();
+        $activeConversationsInPeriod = (clone $messageQuery)->whereBetween('created_at', [$fromDate, $toDate])
+            ->distinct('conversation_id')
+            ->count('conversation_id');
+
+        // 4. DAILY BREAKDOWN TIMELINE
+        $dailyBreakdown = [];
+        $cursor = $fromDate->copy()->startOfDay();
+        while ($cursor <= $toDate) {
+            $dayStart = $cursor->copy()->startOfDay();
+            $dayEnd = $cursor->copy()->endOfDay();
+            $dateStr = $cursor->toDateString();
+
+            $dayInboxes = (clone $conversationQuery)->whereBetween('created_at', [$dayStart, $dayEnd])->count();
+            $dayTotalMsgs = (clone $messageQuery)->whereBetween('created_at', [$dayStart, $dayEnd])->count();
+            $dayCustMsgs = (clone $messageQuery)->whereBetween('created_at', [$dayStart, $dayEnd])
+                ->where('sender_type', ConversationMessage::SENDER_CUSTOMER)
+                ->count();
+            $dayShopMsgs = (clone $messageQuery)->whereBetween('created_at', [$dayStart, $dayEnd])
+                ->where('sender_type', ConversationMessage::SENDER_SHOP)
+                ->count();
+
+            $dailyBreakdown[] = [
+                'date' => $dateStr,
+                'inboxes_opened' => $dayInboxes,
+                'total_messages' => $dayTotalMsgs,
+                'customer_messages' => $dayCustMsgs,
+                'shop_messages' => $dayShopMsgs,
+            ];
+
+            $cursor->addDay();
+        }
+
+        // 5. TOP ACTIVE SHOPS IN PERIOD
+        $topShopsRaw = ConversationMessage::selectRaw('conversations.shop_id, COUNT(conversation_messages.id) as msg_count, SUM(CASE WHEN conversation_messages.sender_type = "customer" THEN 1 ELSE 0 END) as customer_msg_count, SUM(CASE WHEN conversation_messages.sender_type = "shop" THEN 1 ELSE 0 END) as shop_msg_count')
+            ->join('conversations', 'conversations.id', '=', 'conversation_messages.conversation_id')
+            ->whereBetween('conversation_messages.created_at', [$fromDate, $toDate])
+            ->when($shopIdFilter, fn ($q) => $q->where('conversations.shop_id', $shopIdFilter))
+            ->groupBy('conversations.shop_id')
+            ->orderByDesc('msg_count')
+            ->limit(5)
+            ->get();
+
+        $topActiveShops = [];
+        foreach ($topShopsRaw as $item) {
+            $shop = Shops::find($item->shop_id);
+            $topActiveShops[] = [
+                'shop_id' => (int) $item->shop_id,
+                'shop_name' => $shop ? ($shop->shop_name ?: $shop->name) : 'Unknown Shop',
+                'shop_code' => $shop?->code,
+                'total_messages' => (int) $item->msg_count,
+                'customer_messages' => (int) $item->customer_msg_count,
+                'shop_messages' => (int) $item->shop_msg_count,
+                'inboxes_count' => Conversation::where('shop_id', $item->shop_id)->count(),
+            ];
+        }
+
+        return [
+            'period' => $period,
+            'from' => $fromDate->toIso8601String(),
+            'to' => $toDate->toIso8601String(),
+            'overview_totals' => [
+                'total_inboxes_all_time' => $totalInboxesAllTime,
+                'total_messages_all_time' => $totalMessagesAllTime,
+                'total_shops_with_chats' => $totalShopsWithChats,
+                'total_customers_with_chats' => $totalCustomersWithChats,
+            ],
+            'today_summary' => [
+                'today_inboxes_opened' => $todayInboxesOpened,
+                'today_total_messages' => $todayTotalMessages,
+                'today_customer_messages' => $todayCustomerMessages,
+                'today_shop_messages' => $todayShopMessages,
+                'today_active_conversations' => $todayActiveConversations,
+            ],
+            'period_summary' => [
+                'inboxes_opened_in_period' => $inboxesInPeriod,
+                'total_messages_in_period' => $totalMessagesInPeriod,
+                'customer_messages_in_period' => $customerMessagesInPeriod,
+                'shop_messages_in_period' => $shopMessagesInPeriod,
+                'active_conversations_in_period' => $activeConversationsInPeriod,
+            ],
+            'daily_breakdown' => $dailyBreakdown,
+            'top_active_shops' => $topActiveShops,
+        ];
     }
 }

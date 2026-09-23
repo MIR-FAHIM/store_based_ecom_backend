@@ -191,6 +191,23 @@ class ChatController extends Controller
         }
     }
 
+    /**
+     * GET /chat/admin/report
+     * GET /reports/chat
+     * Admin Chat Report: Inboxes opened, Message volume, Customer vs Shop breakdown, Timeline, Top Shops.
+     */
+    public function chatReport(Request $request)
+    {
+        try {
+            $user = $this->authenticatedUser($request);
+            $reportData = $this->chatService->chatReport($request->all(), $user);
+
+            return $this->success('Chat volume report fetched successfully', $reportData);
+        } catch (\Throwable $e) {
+            return $this->handleThrowable($e);
+        }
+    }
+
     private function authenticatedUser(Request $request)
     {
         $user = $request->attributes->get('api_user');

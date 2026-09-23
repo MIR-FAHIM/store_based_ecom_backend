@@ -170,6 +170,7 @@ Route::prefix('customer-preferences-store')->group(function () {
 });
 
 Route::prefix('chat')->group(function () {
+    Route::get('/admin/report', [ChatController::class, 'chatReport']);
     Route::get('/unread-count', [ChatController::class, 'unreadCount']);
     Route::get('/conversations', [ChatController::class, 'conversations']);
     Route::post('/conversations', [ChatController::class, 'openConversation']);
@@ -391,6 +392,7 @@ Route::prefix('product-attributes')->group(function () {
 });
 
 Route::prefix('reports')->group(function () {
+    Route::get('/chat', [ChatController::class, 'chatReport']);
     Route::get('/dashboard', [ReportController::class, 'dashboard']);
     Route::get('/shop/{userId}', [ReportController::class, 'shopReportByUser']);
     Route::get('/shop/sales/{shopId}', [ReportController::class, 'shopSalesReport']);
