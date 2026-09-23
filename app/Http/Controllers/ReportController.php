@@ -724,7 +724,7 @@ class ReportController extends Controller
 
             // Summary Totals
             $totalRevenue = (float) OnlinePayment::where('payment_type', 'store_subscription')
-                ->where('status', 'completed')
+                ->where('status', 'success')
                 ->sum('amount');
 
             $totalBought = (int) OnlinePayment::where('payment_type', 'store_subscription')->count();
