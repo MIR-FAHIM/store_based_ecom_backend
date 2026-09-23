@@ -737,7 +737,7 @@ class ReportController extends Controller
                 ->count();
 
             $completedPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
-                ->where('status', 'completed')
+                ->where('status', 'success')
                 ->count();
 
             $failedPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
