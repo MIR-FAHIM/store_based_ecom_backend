@@ -14,6 +14,9 @@ use App\Models\Review;
 use App\Models\CustomerLedger;
 use App\Models\CustomerPreferenceStore;
 use App\Models\StoreCashLog;
+use App\Models\OnlinePayment;
+use App\Models\StoreSubscription;
+use App\Models\SubscriptionPackage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
@@ -682,6 +685,242 @@ class ReportController extends Controller
             return $this->success('Today report fetched', $data);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /reports/subscriptions
+     * Admin Store Subscription Purchases & Pending Payments Panel Report
+     */
+    public function subscriptionReport(Request $request)
+    {
+        try {
+            $now = Carbon::now('Asia/Dhaka');
+            $period = $request->input('period', 'all');
+            $paymentStatus = $request->input('payment_status');
+            $subscriptionStatus = $request->input('subscription_status');
+            $search = trim((string) $request->input('search', ''));
+            $perPage = (int) $request->input('per_page', 20);
+
+            $fromDate = null;
+            $toDate = null;
+
+            if ($period === 'today') {
+                $fromDate = $now->copy()->startOfDay();
+                $toDate = $now->copy()->endOfDay();
+            } elseif ($period === 'this_week') {
+                $fromDate = $now->copy()->startOfWeek();
+                $toDate = $now->copy()->endOfWeek();
+            } elseif ($period === 'this_month') {
+                $fromDate = $now->copy()->startOfMonth();
+                $toDate = $now->copy()->endOfMonth();
+            } elseif ($period === 'last_30_days') {
+                $fromDate = $now->copy()->subDays(29)->startOfDay();
+                $toDate = $now->copy()->endOfDay();
+            } elseif ($period === 'custom' || $request->filled('start_date')) {
+                $fromDate = Carbon::parse($request->input('start_date', $now->toDateString()))->startOfDay();
+                $toDate = Carbon::parse($request->input('end_date', $now->toDateString()))->endOfDay();
+            }
+
+            // Summary Totals
+            $totalRevenue = (float) OnlinePayment::where('payment_type', 'store_subscription')
+                ->where('status', 'completed')
+                ->sum('amount');
+
+            $totalBought = (int) OnlinePayment::where('payment_type', 'store_subscription')->count();
+
+            $pendingPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
+                ->where(function ($q) {
+                    $q->where('status', 'pending')
+                      ->orWhereNull('status');
+                })
+                ->count();
+
+            $completedPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
+                ->where('status', 'completed')
+                ->count();
+
+            $failedPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
+                ->whereIn('status', ['failed', 'cancelled'])
+                ->count();
+
+            $activeSubscriptionsCount = (int) StoreSubscription::where('status', 'active')->count();
+            $expiredSubscriptionsCount = (int) StoreSubscription::where('status', 'expired')->count();
+
+            // Main Query
+            $query = OnlinePayment::query()
+                ->where(function ($q) {
+                    $q->where('payment_type', 'store_subscription')
+                      ->orWhereNotNull('store_subscription_id');
+                })
+                ->with([
+                    'store.user',
+                    'user',
+                    'storeSubscription.package',
+                ]);
+
+            if ($fromDate && $toDate) {
+                $query->whereBetween('created_at', [$fromDate, $toDate]);
+            }
+
+            if ($paymentStatus && $paymentStatus !== 'all') {
+                if ($paymentStatus === 'pending') {
+                    $query->where(function ($q) {
+                        $q->where('status', 'pending')->orWhereNull('status');
+                    });
+                } else {
+                    $query->where('status', $paymentStatus);
+                }
+            }
+
+            if ($subscriptionStatus && $subscriptionStatus !== 'all') {
+                $query->whereHas('storeSubscription', fn ($sq) => $sq->where('status', $subscriptionStatus));
+            }
+
+            if (!empty($search)) {
+                $query->where(function ($sq) use ($search) {
+                    $sq->where('merchant_transaction_id', 'like', "%{$search}%")
+                      ->orWhere('gateway_transaction_id', 'like', "%{$search}%")
+                      ->orWhereHas('store', function ($qshop) use ($search) {
+                          $qshop->where('shop_name', 'like', "%{$search}%")
+                                ->orWhere('name', 'like', "%{$search}%")
+                                ->orWhere('code', 'like', "%{$search}%")
+                                ->orWhere('phone', 'like', "%{$search}%")
+                                ->orWhere('email', 'like', "%{$search}%");
+                      })
+                      ->orWhereHas('user', function ($quser) use ($search) {
+                          $quser->where('name', 'like', "%{$search}%")
+                                ->orWhere('phone', 'like', "%{$search}%")
+                                ->orWhere('email', 'like', "%{$search}%");
+                      });
+                });
+            }
+
+            $query->latest();
+
+            $paginated = $query->paginate($perPage);
+
+            // Format items into clean DTOs
+            $items = collect($paginated->items())->map(function (OnlinePayment $payment) {
+                $sub = $payment->storeSubscription;
+                $shop = $payment->store ?: $sub?->store;
+                $package = $sub?->package;
+                $user = $payment->user ?: $shop?->user;
+
+                return [
+                    'online_payment_id' => $payment->id,
+                    'payment_type' => $payment->payment_type,
+                    'merchant_transaction_id' => $payment->merchant_transaction_id,
+                    'gateway' => $payment->gateway,
+                    'gateway_transaction_id' => $payment->gateway_transaction_id,
+                    'amount' => (float) $payment->amount,
+                    'currency' => $payment->currency ?: 'BDT',
+                    'payment_status' => $payment->status ?: 'pending',
+                    'paid_at' => $payment->paid_at?->toIso8601String(),
+                    'initiated_at' => $payment->initiated_at?->toIso8601String() ?: $payment->created_at?->toIso8601String(),
+                    'shop' => $shop ? [
+                        'id' => (int) $shop->id,
+                        'shop_name' => $shop->shop_name ?: $shop->name,
+                        'code' => $shop->code,
+                        'phone' => $shop->phone,
+                        'email' => $shop->email,
+                        'owner' => $user ? [
+                            'id' => (int) $user->id,
+                            'name' => $user->name,
+                            'email' => $user->email,
+                            'phone' => $user->phone,
+                        ] : null,
+                    ] : null,
+                    'package' => $package ? [
+                        'id' => (int) $package->id,
+                        'name' => $package->name,
+                        'slug' => $package->slug,
+                        'price' => (float) $package->price,
+                        'billing_cycle' => $package->billing_cycle,
+                        'max_products' => $package->max_products !== null ? (int) $package->max_products : null,
+                    ] : null,
+                    'subscription' => $sub ? [
+                        'id' => (int) $sub->id,
+                        'status' => $sub->status,
+                        'payment_status' => $sub->payment_status,
+                        'starts_at' => $sub->starts_at?->toIso8601String(),
+                        'ends_at' => $sub->ends_at?->toIso8601String(),
+                    ] : null,
+                ];
+            });
+
+            $responsePayload = [
+                'summary' => [
+                    'total_revenue' => round($totalRevenue, 2),
+                    'total_subscriptions_bought' => $totalBought,
+                    'total_completed_payments' => $completedPaymentsCount,
+                    'total_pending_payments' => $pendingPaymentsCount,
+                    'total_failed_payments' => $failedPaymentsCount,
+                    'total_active_subscriptions' => $activeSubscriptionsCount,
+                    'total_expired_subscriptions' => $expiredSubscriptionsCount,
+                ],
+                'subscriptions' => [
+                    'current_page' => $paginated->currentPage(),
+                    'per_page' => $paginated->perPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'total' => $paginated->total(),
+                    'data' => $items,
+                ],
+            ];
+
+            return $this->success('Subscription report fetched successfully', $responsePayload);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /reports/subscriptions/{paymentId}/verify-payment
+     * Admin manual approval/verification of a pending subscription payment
+     */
+    public function verifySubscriptionPayment(Request $request, $paymentId)
+    {
+        try {
+            $payment = OnlinePayment::find($paymentId);
+            if (!$payment) {
+                return $this->failed('Online payment record not found', null, 404);
+            }
+
+            DB::beginTransaction();
+
+            $payment->update([
+                'status' => 'completed',
+                'paid_at' => Carbon::now(),
+            ]);
+
+            if ($payment->store_subscription_id) {
+                $subscription = StoreSubscription::find($payment->store_subscription_id);
+                if ($subscription) {
+                    $subscription->update([
+                        'status' => 'active',
+                        'payment_status' => 'paid',
+                        'payment_reference' => $payment->merchant_transaction_id ?: $payment->gateway_transaction_id,
+                    ]);
+
+                    if ($subscription->store_id) {
+                        $package = SubscriptionPackage::find($subscription->subscription_package_id);
+                        if ($package && $package->max_products !== null) {
+                            Shops::where('id', $subscription->store_id)->update([
+                                'product_limit' => $package->max_products,
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            DB::commit();
+
+            return $this->success('Subscription payment verified and activated successfully.', [
+                'payment' => $payment->fresh(),
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return $this->failed('Could not verify subscription payment', ['error' => $e->getMessage()], 500);
         }
     }
 }

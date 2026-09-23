@@ -112,6 +112,7 @@ Route::prefix('brands')->group(function () {
 
 Route::prefix('subscription-packages')->group(function () {
     Route::get('/', [SubscriptionPackageController::class, 'index'])->withoutMiddleware('token');
+    Route::get('/reports', [ReportController::class, 'subscriptionReport']);
     Route::get('/slug/{slug}', [SubscriptionPackageController::class, 'detailsBySlug'])->withoutMiddleware('token');
     Route::get('/{id}', [SubscriptionPackageController::class, 'details'])->withoutMiddleware('token');
     Route::post('/create', [SubscriptionPackageController::class, 'create']);
@@ -394,6 +395,8 @@ Route::prefix('product-attributes')->group(function () {
 Route::prefix('reports')->group(function () {
     Route::get('/chat', [ChatController::class, 'chatReport']);
     Route::get('/dashboard', [ReportController::class, 'dashboard']);
+    Route::get('/subscriptions', [ReportController::class, 'subscriptionReport']);
+    Route::post('/subscriptions/{paymentId}/verify-payment', [ReportController::class, 'verifySubscriptionPayment']);
     Route::get('/shop/{userId}', [ReportController::class, 'shopReportByUser']);
     Route::get('/shop/sales/{shopId}', [ReportController::class, 'shopSalesReport']);
     Route::get('/shop/{shopId}/summary', [ReportController::class, 'shopSummary']);
