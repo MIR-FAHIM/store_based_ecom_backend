@@ -876,6 +876,14 @@ class ProductController extends Controller
         } catch (ValidationException $e) {
             DB::rollBack();
             return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (QueryException $e) {
+            DB::rollBack();
+            $this->logProductCreateError($request, $e, 'error', [
+                'product_id' => $productId,
+                'images' => $request->input('images'),
+            ]);
+            $databaseError = $this->productCreateDatabaseError($e);
+            return $this->failed($databaseError['message'], $databaseError['errors'], $databaseError['code']);
         } catch (\Throwable $e) {
             DB::rollBack();
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
