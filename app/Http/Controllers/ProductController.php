@@ -251,6 +251,8 @@ class ProductController extends Controller
             'sku' => $storeProduct->sku,
             'shop_id' => (int) $storeProduct->store_id,
             'store_id' => (int) $storeProduct->store_id,
+            'shop' => $storeProduct->store,
+            'store' => $storeProduct->store,
             'featured' => (bool) $storeProduct->is_featured,
             'is_featured' => (bool) $storeProduct->is_featured,
             'todays_deal' => (bool) $storeProduct->todays_deal,
@@ -271,6 +273,7 @@ class ProductController extends Controller
         }
 
         $query = StoreProduct::with([
+            'store',
             'product.primaryImage',
             'product.images.upload',
             'product.category',
