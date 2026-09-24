@@ -399,6 +399,14 @@ class OrderController extends Controller
 
             $orders = $query->latest()->paginate($perPage);
 
+            foreach ($orders as $order) {
+                $firstItem = $order->items->first();
+                $shop = $firstItem ? $firstItem->shop : null;
+                $order->shop_name = $shop ? ($shop->shop_name ?: $shop->name) : null;
+                $order->shop_id   = $shop ? (int) $shop->id : ($firstItem ? (int) $firstItem->shop_id : null);
+                $order->shop      = $shop;
+            }
+
             return $this->success('Orders fetched successfully', $orders);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
@@ -413,11 +421,13 @@ class OrderController extends Controller
                 ->latest()
                 ->paginate($perPage);
 
-            // Each order belongs to one shop — append shop_name directly on the order
+            // Each order belongs to one shop — append shop_name, shop_id, and shop object directly on the order
             foreach ($orders as $order) {
                 $firstItem = $order->items->first();
-                $order->shop_name = $firstItem ? optional($firstItem->shop)->name : null;
-                $order->shop_id   = $firstItem ? $firstItem->shop_id : null;
+                $shop = $firstItem ? $firstItem->shop : null;
+                $order->shop_name = $shop ? ($shop->shop_name ?: $shop->name) : null;
+                $order->shop_id   = $shop ? (int) $shop->id : ($firstItem ? (int) $firstItem->shop_id : null);
+                $order->shop      = $shop;
             }
 
             return $this->success('Orders fetched successfully', $orders);
