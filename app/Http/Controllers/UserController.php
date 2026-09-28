@@ -595,38 +595,27 @@ class UserController extends Controller
                 'zone' => ['nullable', 'string', 'max:100'],
                 'district' => ['nullable', 'string', 'max:100'],
                 'area' => ['nullable', 'string', 'max:100'],
+                'division_id' => ['nullable', 'integer'],
+                'district_id' => ['nullable', 'integer'],
+                'upazila_id' => ['nullable', 'integer'],
                 'lat' => ['nullable', 'numeric'],
                 'lon' => ['nullable', 'numeric'],
 
                 'banned' => ['nullable', 'boolean'],
             ]);
 
-            $user->fill([
-                'name' => array_key_exists('name', $validated) ? $validated['name'] : $user->name,
-                'email' => array_key_exists('email', $validated) ? $validated['email'] : $user->email,
-                'role' => array_key_exists('role', $validated) ? $validated['role'] : $user->role,
-
-                'phone' => array_key_exists('phone', $validated) ? $validated['phone'] : $user->phone,
-                'optional_phone' => array_key_exists('optional_phone', $validated) ? $validated['optional_phone'] : $user->optional_phone,
-                'address' => array_key_exists('address', $validated) ? $validated['address'] : $user->address,
-                'device_token' => array_key_exists('device_token', $validated)
-                    ? $validated['device_token']
-                    : (array_key_exists('fcm_token', $validated) ? $validated['fcm_token'] : $user->device_token),
-                'status' => array_key_exists('status', $validated) ? $validated['status'] : $user->status,
-
-                'zone' => array_key_exists('zone', $validated) ? $validated['zone'] : $user->zone,
-                'district' => array_key_exists('district', $validated) ? $validated['district'] : $user->district,
-                'area' => array_key_exists('area', $validated) ? $validated['area'] : $user->area,
-                'lat' => array_key_exists('lat', $validated) ? $validated['lat'] : $user->lat,
-                'lon' => array_key_exists('lon', $validated) ? $validated['lon'] : $user->lon,
-
-                'banned' => array_key_exists('banned', $validated) ? (bool) $validated['banned'] : $user->banned,
-            ]);
-
+            $updateData = $validated;
             if (!empty($validated['password'])) {
-                $user->password = Hash::make($validated['password']);
+                $updateData['password'] = Hash::make($validated['password']);
+            } else {
+                unset($updateData['password']);
             }
 
+            if (array_key_exists('fcm_token', $validated) && !array_key_exists('device_token', $validated)) {
+                $updateData['device_token'] = $validated['fcm_token'];
+            }
+
+            $user->fill($updateData);
             $user->save();
 
             return $this->success('User updated successfully', $user);

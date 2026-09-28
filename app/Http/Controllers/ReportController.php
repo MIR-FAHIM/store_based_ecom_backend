@@ -804,7 +804,9 @@ class ReportController extends Controller
             $items = collect($paginated->items())->map(function (OnlinePayment $payment) {
                 $sub = $payment->storeSubscription;
                 $shop = $payment->store ?: $sub?->store;
-                $package = $sub?->package;
+                $subData = $payment->gateway_response['subscription_data'] ?? [];
+                $packageId = $sub?->subscription_package_id ?: ($subData['subscription_package_id'] ?? null);
+                $package = $sub?->package ?: ($packageId ? SubscriptionPackage::find($packageId) : null);
                 $user = $payment->user ?: $shop?->user;
 
                 return [
@@ -836,7 +838,7 @@ class ReportController extends Controller
                         'name' => $package->name,
                         'slug' => $package->slug,
                         'price' => (float) $package->price,
-                        'billing_cycle' => $package->billing_cycle,
+                        'billing_cycle' => $subData['billing_cycle'] ?? $package->billing_cycle,
                         'max_products' => $package->max_products !== null ? (int) $package->max_products : null,
                     ] : null,
                     'subscription' => $sub ? [
@@ -886,6 +888,11 @@ class ReportController extends Controller
                 return $this->failed('Online payment record not found', null, 404);
             }
 
+            $merchantTxnId = $payment->merchant_transaction_id ?: $payment->gateway_transaction_id;
+            if (empty($merchantTxnId)) {
+                return $this->failed('Merchant transaction ID is missing on this payment record.', null, 422);
+            }
+
             DB::beginTransaction();
 
             $payment->update([
@@ -893,23 +900,65 @@ class ReportController extends Controller
                 'paid_at' => Carbon::now(),
             ]);
 
+            $subscription = null;
             if ($payment->store_subscription_id) {
                 $subscription = StoreSubscription::find($payment->store_subscription_id);
-                if ($subscription) {
-                    $subscription->update([
-                        'status' => 'active',
-                        'payment_status' => 'paid',
-                        'payment_reference' => $payment->merchant_transaction_id ?: $payment->gateway_transaction_id,
-                    ]);
+            }
 
-                    if ($subscription->store_id) {
-                        $package = SubscriptionPackage::find($subscription->subscription_package_id);
-                        if ($package && $package->max_products !== null) {
-                            Shops::where('id', $subscription->store_id)->update([
-                                'product_limit' => $package->max_products,
-                            ]);
-                        }
+            if (!$subscription && $payment->store_id) {
+                $subData = $payment->gateway_response['subscription_data'] ?? [];
+                $packageId = $subData['subscription_package_id'] ?? null;
+                $billingCycle = $subData['billing_cycle'] ?? 'monthly';
+
+                if ($packageId) {
+                    $package = SubscriptionPackage::find($packageId);
+                    if ($package) {
+                        StoreSubscription::where('store_id', $payment->store_id)
+                            ->whereIn('status', ['pending', 'active'])
+                            ->update(['status' => 'cancelled']);
+
+                        $startsAt = Carbon::now();
+                        $subscription = StoreSubscription::create([
+                            'store_id' => $payment->store_id,
+                            'subscription_package_id' => $package->id,
+                            'status' => 'active',
+                            'starts_at' => $startsAt,
+                            'ends_at' => match ($billingCycle) {
+                                'monthly' => $startsAt->copy()->addMonth(),
+                                'yearly' => $startsAt->copy()->addYear(),
+                                'lifetime' => null,
+                                default => null,
+                            },
+                            'trial_ends_at' => $package->trial_days ? $startsAt->copy()->addDays((int) $package->trial_days) : null,
+                            'price' => $package->price,
+                            'currency' => 'BDT',
+                            'billing_cycle' => $billingCycle,
+                            'payment_status' => 'paid',
+                            'payment_reference' => $merchantTxnId,
+                        ]);
+
+                        $payment->update(['store_subscription_id' => $subscription->id]);
                     }
+                }
+            } else if ($subscription) {
+                StoreSubscription::where('store_id', $subscription->store_id)
+                    ->where('id', '!=', $subscription->id)
+                    ->whereIn('status', ['pending', 'active'])
+                    ->update(['status' => 'cancelled']);
+
+                $subscription->update([
+                    'status' => 'active',
+                    'payment_status' => 'paid',
+                    'payment_reference' => $merchantTxnId,
+                ]);
+            }
+
+            if ($subscription && $subscription->store_id) {
+                $package = SubscriptionPackage::find($subscription->subscription_package_id);
+                if ($package && $package->max_products !== null) {
+                    Shops::where('id', $subscription->store_id)->update([
+                        'product_limit' => $package->max_products,
+                    ]);
                 }
             }
 

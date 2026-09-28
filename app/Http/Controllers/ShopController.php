@@ -319,7 +319,7 @@ class ShopController extends Controller
             }
 
             $query = Product::query()
-                ->with(['primaryImage', 'images', 'category', 'subCategory', 'brand', 'productDiscount'])
+                ->with(['primaryImage', 'images', 'category', 'subCategory', 'brand'])
                 ->where('user_id', $shop->user_id);
 
             if ($request->filled('search')) {

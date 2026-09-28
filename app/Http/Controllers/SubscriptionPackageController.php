@@ -310,6 +310,18 @@ class SubscriptionPackageController extends Controller
             }
 
             $billingCycle = $validated['billing_cycle'] ?? $package->billing_cycle;
+            $paymentRequired = (float) $package->price > 0;
+
+            if ($paymentRequired) {
+                return $this->amarPayService->initiateSubscriptionPackagePayment(
+                    $store,
+                    $package,
+                    $billingCycle,
+                    $request->attributes->get('api_user')
+                );
+            }
+
+            // Free Package Flow
             $startsAt = Carbon::now();
 
             StoreSubscription::where('store_id', $store->id)
@@ -319,25 +331,16 @@ class SubscriptionPackageController extends Controller
             $subscription = StoreSubscription::create([
                 'store_id' => $store->id,
                 'subscription_package_id' => $package->id,
-                'status' => ((float) $package->price > 0) ? 'pending' : 'active',
+                'status' => 'active',
                 'starts_at' => $startsAt,
                 'ends_at' => $this->calculateEndsAt($startsAt, $billingCycle),
                 'trial_ends_at' => $package->trial_days ? $startsAt->copy()->addDays((int) $package->trial_days) : null,
                 'price' => $package->price,
                 'currency' => 'BDT',
                 'billing_cycle' => $billingCycle,
-                'payment_status' => ((float) $package->price > 0) ? 'unpaid' : 'paid',
-                'payment_reference' => null,
+                'payment_status' => 'paid',
+                'payment_reference' => 'FREE_PACKAGE',
             ]);
-
-            $paymentRequired = (float) $subscription->price > 0;
-
-            if ($paymentRequired) {
-                return $this->amarPayService->initiateStoreSubscriptionPayment(
-                    $subscription,
-                    $request->attributes->get('api_user')
-                );
-            }
 
             $store->update([
                 'product_limit' => $package->max_products,
@@ -345,7 +348,7 @@ class SubscriptionPackageController extends Controller
 
             return $this->success('Subscription initiated successfully', [
                 'subscription' => $subscription->load('package'),
-                'payment_required' => $paymentRequired,
+                'payment_required' => false,
                 'payment_url' => null,
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {

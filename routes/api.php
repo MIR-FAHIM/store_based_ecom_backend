@@ -60,7 +60,6 @@ Route::prefix('users')->group(function () {
     Route::post('/add-delivery-man', [UserController::class, 'createDeliveryMan']);
     Route::get('/check-referral-code', [UserController::class, 'checkReferralCode'])->withoutMiddleware('token');
     Route::post('/change-password', [AuthController::class, 'changePassword']);
-
     Route::get('/list', [UserController::class, 'listUsers']);
     Route::get('/customers', [UserController::class, 'getCustomers']);
     Route::get('/vendors', [UserController::class, 'getVendors']);
@@ -72,7 +71,7 @@ Route::prefix('users')->group(function () {
     Route::get('/seller-profile', [UserController::class, 'getSellerProfile'])->withoutMiddleware('token');
     Route::get('/seller-profile/{id}', [UserController::class, 'getSellerProfile'])->withoutMiddleware('token');
     Route::get('/details/{id}', [UserController::class, 'getUserDetails']);
-    Route::put('/update/{id}', [UserController::class, 'updateUser']);
+    Route::match(['put', 'post'], '/update/{id}', [UserController::class, 'updateUser']);
     Route::patch('/ban/{id}', [UserController::class, 'banUser']);
     Route::patch('/unban/{id}', [UserController::class, 'unbanUser']);
     Route::delete('/delete/{id}', [UserController::class, 'deleteUser']);
