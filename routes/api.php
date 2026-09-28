@@ -462,7 +462,7 @@ Route::prefix('error-logs')->group(function () {
 });
 
 Route::prefix('firebase')->group(function () {
-    Route::post('/test-push', [FirebaseNotificationController::class, 'testPush']);
+    Route::post('/send-push-notification', [FirebaseNotificationController::class, 'sendPushNotification']);
 });
 
 

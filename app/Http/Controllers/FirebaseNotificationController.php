@@ -37,7 +37,7 @@ class FirebaseNotificationController extends Controller
     /**
      * POST /firebase/test-push
      */
-    public function testPush(Request $request)
+    public function sendPushNotification(Request $request)
     {
         try {
             $validated = $request->validate([
