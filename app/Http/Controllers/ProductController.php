@@ -1715,10 +1715,26 @@ class ProductController extends Controller
                 }
             }
 
-            $product->fill($validated);
-            $product->save();
+            $storeProductUpdates = [];
 
+            if (array_key_exists('unit_price', $validated)) {
+                $storeProductUpdates['price'] = $validated['unit_price'];
+            }
 
+            if (array_key_exists('current_stock', $validated)) {
+                $storeProductUpdates['stock'] = $validated['current_stock'];
+            }
+
+            DB::transaction(function () use ($product, $validated, $storeProductUpdates) {
+                $product->fill($validated);
+                $product->save();
+
+                if (!empty($storeProductUpdates)) {
+                    StoreProduct::where('product_id', $product->id)->update($storeProductUpdates);
+                }
+            });
+
+            $product->refresh();
 
             return $this->success('Product updated successfully', $product);
         } catch (ValidationException $e) {
