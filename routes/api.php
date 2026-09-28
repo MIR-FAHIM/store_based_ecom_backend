@@ -74,6 +74,8 @@ Route::prefix('users')->group(function () {
     Route::match(['put', 'post'], '/update/{id}', [UserController::class, 'updateUser']);
     Route::patch('/ban/{id}', [UserController::class, 'banUser']);
     Route::patch('/unban/{id}', [UserController::class, 'unbanUser']);
+    Route::match(['patch', 'post', 'put'], '/toggle-must-buy-package/{id}', [UserController::class, 'toggleMustBuyPackage']);
+    Route::match(['patch', 'post', 'put'], '/{id}/must-buy-package', [UserController::class, 'toggleMustBuyPackage']);
     Route::delete('/delete/{id}', [UserController::class, 'deleteUser']);
     Route::delete('/delete-seller/{id}', [UserController::class, 'deleteSeller']);
 });

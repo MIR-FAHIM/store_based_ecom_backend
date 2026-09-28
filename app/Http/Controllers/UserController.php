@@ -670,6 +670,35 @@ class UserController extends Controller
     }
 
     /**
+     * PATCH|POST /users/toggle-must-buy-package/{id}
+     * Toggle or set must_buy_package for a user
+     */
+    public function toggleMustBuyPackage(Request $request, $id)
+    {
+        try {
+            $user = User::find($id);
+
+            if (!$user) {
+                return $this->failed('User not found', null, 404);
+            }
+
+            if ($request->has('must_buy_package')) {
+                $user->must_buy_package = filter_var($request->input('must_buy_package'), FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+            } else {
+                $user->must_buy_package = $user->must_buy_package ? 0 : 1;
+            }
+
+            $user->save();
+
+            $statusText = $user->must_buy_package ? 'enabled' : 'disabled';
+
+            return $this->success("User must_buy_package status {$statusText} successfully", $user);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * DELETE /users/delete/{id}
      */
     public function deleteUser($id)
