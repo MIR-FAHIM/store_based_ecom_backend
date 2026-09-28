@@ -602,6 +602,7 @@ class UserController extends Controller
                 'lon' => ['nullable', 'numeric'],
 
                 'banned' => ['nullable', 'boolean'],
+                'must_buy_package' => ['nullable', 'boolean'],
             ]);
 
             $updateData = $validated;
