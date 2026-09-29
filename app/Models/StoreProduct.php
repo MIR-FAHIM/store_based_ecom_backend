@@ -22,6 +22,7 @@ class StoreProduct extends Model
         'is_active',
         'is_featured',
         'todays_deal',
+        'hot_deal',
     ];
 
     protected $casts = [
@@ -33,6 +34,7 @@ class StoreProduct extends Model
         'is_active' => 'boolean',
         'is_featured' => 'boolean',
         'todays_deal' => 'boolean',
+        'hot_deal' => 'boolean',
     ];
 
     public function store()

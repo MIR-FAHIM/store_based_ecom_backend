@@ -138,6 +138,8 @@ Route::prefix('products')->group(function () {
     Route::get('/category/wise', [ProductController::class, 'listCategoryProducts'])->withoutMiddleware('token');;
     Route::get('/list/featured', [ProductController::class, 'listFeaturedProducts'])->withoutMiddleware('token');;
     Route::get('/list/today-deal', [ProductController::class, 'listTodayDealProducts'])->withoutMiddleware('token');;
+    Route::get('/list/hot-deal', [ProductController::class, 'listHotDealProducts'])->withoutMiddleware('token');
+    Route::get('/hot-deals', [ProductController::class, 'listHotDealProducts'])->withoutMiddleware('token');
     Route::get('/list/buy-again', [ProductController::class, 'getBuyAgainProducts']);
     Route::get('/list/stock-out', [ProductController::class, 'listStockOutProducts'])->withoutMiddleware('token');
     Route::get('/brand/{brandId}', [ProductController::class, 'getProductsByBrand'])->withoutMiddleware('token');

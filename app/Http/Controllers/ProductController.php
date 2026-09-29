@@ -306,6 +306,16 @@ class ProductController extends Controller
             $query->where('todays_deal', true);
         }
 
+        if ($flag === 'hot_deal') {
+            $query->where(function ($q) {
+                if (Schema::hasColumn('store_products', 'hot_deal')) {
+                    $q->where('hot_deal', true);
+                } else {
+                    $q->where('todays_deal', true);
+                }
+            });
+        }
+
         if ($request->filled('category_id')) {
             $categoryId = (int) $request->category_id;
             $query->whereHas('product', function ($productQuery) use ($categoryId) {
@@ -1412,6 +1422,56 @@ class ProductController extends Controller
             $products = $this->addStorefrontProductFields($products);
 
             return $this->success('Products fetched successfully', $products, 200,);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /products/list/hot-deal?store_slug={slug}&per_page=20
+     * Returns hot deal products filtered optionally by store_slug
+     */
+    public function listHotDealProducts(Request $request)
+    {
+        try {
+            if ($request->filled('store_slug')) {
+                $products = $this->publicStoreProductPaginator($request, 'hot_deal', 20);
+
+                if ($products) {
+                    return $this->success('Hot deal products fetched successfully', $products, 200);
+                }
+            }
+
+            $query = Product::query()->fromActiveShop()->with([
+                'primaryImage',
+                'images',
+                'category',
+                'subCategory',
+                'brand',
+                'productDiscount',
+                'averageReview',
+                'shop'
+            ]);
+
+            $this->applyStoreSlugFilter($query, $request);
+
+            $query->where(function ($q) {
+                if (Schema::hasColumn('products', 'hot_deal')) {
+                    $q->where('hot_deal', 1)->orWhere('hot_deal', true);
+                } else {
+                    $q->where('todays_deal', 1)->orWhere('todays_deal', true);
+                }
+            });
+
+            if ($request->filled('is_active') && Schema::hasColumn('products', 'is_active')) {
+                $query->where('is_active', (int) $request->is_active);
+            }
+
+            $perPage = (int) $request->get('per_page', 20);
+            $products = $this->applyPublicProductVisibility($query)->latest()->paginate($perPage);
+            $products = $this->addStorefrontProductFields($products);
+
+            return $this->success('Hot deal products fetched successfully', $products, 200);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }

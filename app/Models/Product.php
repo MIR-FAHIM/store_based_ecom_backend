@@ -32,6 +32,7 @@ class Product extends Model
         'colors',
         'variations',
         'todays_deal',
+        'hot_deal',
         'published',
         'approved',
         'stock_visibility_state',
