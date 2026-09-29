@@ -1724,6 +1724,15 @@ class ProductController extends Controller
             if (array_key_exists('current_stock', $validated)) {
                 $storeProductUpdates['stock'] = $validated['current_stock'];
             }
+            if (array_key_exists('published', $validated)) {
+                $storeProductUpdates['is_active'] = $validated['current_stock'];
+            }
+            if (array_key_exists('featured', $validated)) {
+                $storeProductUpdates['is_featured'] = $validated['current_stock'];
+            }
+            if (array_key_exists('seller_featured', $validated)) {
+                $storeProductUpdates['is_featured'] = $validated['current_stock'];
+            }
 
             DB::transaction(function () use ($product, $validated, $storeProductUpdates) {
                 $product->fill($validated);

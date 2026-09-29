@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Shops;
 use App\Models\StoreSubscription;
 use App\Models\SubscriptionPackage;
+use App\Models\User;
 use App\Service\AmarPayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -345,6 +346,10 @@ class SubscriptionPackageController extends Controller
             $store->update([
                 'product_limit' => $package->max_products,
             ]);
+
+            if ($store->user_id) {
+                User::whereKey($store->user_id)->update(['must_buy_package' => 0]);
+            }
 
             return $this->success('Subscription initiated successfully', [
                 'subscription' => $subscription->load('package'),

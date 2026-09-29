@@ -859,11 +859,17 @@ class AmarPayService
 
     private function syncStoreProductLimit(StoreSubscription $subscription): void
     {
-        $subscription->loadMissing('package');
+        $subscription->loadMissing(['package', 'store']);
 
         Shops::whereKey($subscription->store_id)->update([
             'product_limit' => $subscription->package?->max_products,
         ]);
+
+        if ($subscription->store?->user_id) {
+            User::whereKey($subscription->store->user_id)->update([
+                'must_buy_package' => 0,
+            ]);
+        }
     }
 
     private function isAdmin(User $authenticatedUser): bool

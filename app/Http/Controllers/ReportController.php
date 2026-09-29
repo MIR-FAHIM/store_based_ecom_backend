@@ -960,6 +960,12 @@ class ReportController extends Controller
                         'product_limit' => $package->max_products,
                     ]);
                 }
+                $shop = Shops::find($subscription->store_id);
+                if ($shop && $shop->user_id) {
+                    User::whereKey($shop->user_id)->update([
+                        'must_buy_package' => 0,
+                    ]);
+                }
             }
 
             DB::commit();
