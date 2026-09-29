@@ -40,7 +40,8 @@ return new class extends Migration
         Schema::create('reward_challenge_participants', function (Blueprint $table) {
             $table->id();
             $table->foreignId('challenge_id')->constrained('reward_challenges')->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+            $table->unsignedInteger('user_id');
+            $table->foreign('user_id')->references('id')->on('users')->cascadeOnDelete();
             $table->integer('current_points')->default(0);
             $table->timestamp('joined_at')->useCurrent();
             $table->timestamps();
