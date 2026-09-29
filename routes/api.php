@@ -173,6 +173,7 @@ Route::prefix('seller/challenges')->group(function () {
     Route::post('/', [\App\Http\Controllers\RewardRaceController::class, 'createChallenge']);
     Route::get('/', [\App\Http\Controllers\RewardRaceController::class, 'getSellerChallenges']);
     Route::get('/{id}/participants', [\App\Http\Controllers\RewardRaceController::class, 'getChallengeLeaderboard']);
+    Route::get('/{id}/statistics', [\App\Http\Controllers\RewardRaceController::class, 'getChallengeStatistics']);
 });
 
 Route::prefix('customer')->group(function () {

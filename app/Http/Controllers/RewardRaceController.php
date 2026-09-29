@@ -207,7 +207,7 @@ class RewardRaceController extends Controller
                 ->with(['challenge.shop', 'challenge.rewards'])
                 ->get();
 
-            // Format response to include claim statuses
+            // Format response to include claim statuses and progress
             $data = $participants->map(function ($participant) {
                 $claims = RewardClaim::where('challenge_participant_id', $participant->id)->get()->keyBy('challenge_reward_id');
                 
@@ -224,12 +224,21 @@ class RewardRaceController extends Controller
                     ];
                 });
 
+                $targetPoints = $participant->challenge->rewards->max('points_required') ?? 0;
+                $currentPoints = $participant->current_points;
+                $remainingPoints = max(0, $targetPoints - $currentPoints);
+                $progressPercentage = $targetPoints > 0 ? min(100, round(($currentPoints / $targetPoints) * 100)) : 100;
+
                 return [
                     'challenge_id' => $participant->challenge->id,
                     'shop_name' => $participant->challenge->shop->name ?? $participant->challenge->shop->shop_name,
                     'shop_slug' => $participant->challenge->shop->slug,
                     'title' => $participant->challenge->title,
-                    'current_points' => $participant->current_points,
+                    'current_points' => $currentPoints,
+                    'target_points' => $targetPoints,
+                    'remaining_points' => $remainingPoints,
+                    'progress_percentage' => $progressPercentage,
+                    'status' => $participant->challenge->is_active ? 'active' : 'inactive',
                     'rewards' => $formattedRewards,
                 ];
             });
@@ -264,6 +273,35 @@ class RewardRaceController extends Controller
             // Here you could generate a coupon code, etc. depending on the reward type.
             
             return $this->success('Reward claimed successfully', $claim);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /api/seller/challenges/{id}/statistics
+     */
+    public function getChallengeStatistics($id)
+    {
+        try {
+            $challenge = Challenge::findOrFail($id);
+
+            $totalParticipants = ChallengeParticipant::where('challenge_id', $id)->count();
+            $totalPointsIssued = \App\Models\PointTransaction::whereHas('participant', function($q) use ($id) {
+                $q->where('challenge_id', $id);
+            })->where('type', 'earned')->sum('points');
+
+            $rewardStats = RewardClaim::whereHas('participant', function($q) use ($id) {
+                $q->where('challenge_id', $id);
+            })->selectRaw('status, count(*) as count')->groupBy('status')->pluck('count', 'status');
+
+            return $this->success('Challenge statistics retrieved', [
+                'total_participants' => $totalParticipants,
+                'total_points_issued' => $totalPointsIssued,
+                'rewards_unlocked' => ($rewardStats['unlocked'] ?? 0) + ($rewardStats['claimed'] ?? 0) + ($rewardStats['redeemed'] ?? 0),
+                'rewards_claimed' => ($rewardStats['claimed'] ?? 0) + ($rewardStats['redeemed'] ?? 0),
+                'rewards_redeemed' => $rewardStats['redeemed'] ?? 0,
+            ]);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }

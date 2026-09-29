@@ -79,6 +79,15 @@ class RewardRaceService
                         $participant->current_points += $pointsEarned;
                         $participant->save();
 
+                        \App\Models\Notification::create([
+                            'user_id' => $participant->user_id,
+                            'shop_id' => $challenge->shop_id,
+                            'order_id' => $order->id,
+                            'type' => 'points_earned',
+                            'title' => '🎉 You earned points!',
+                            'message' => "You earned {$pointsEarned} points from your recent purchase in {$challenge->title}!",
+                        ]);
+
                         $this->checkAndUnlockRewards($participant, $challenge);
                     });
                 }
@@ -161,7 +170,7 @@ class RewardRaceService
             ->get();
 
         foreach ($rewards as $reward) {
-            RewardClaim::firstOrCreate(
+            $claim = RewardClaim::firstOrCreate(
                 [
                     'challenge_participant_id' => $participant->id,
                     'challenge_reward_id' => $reward->id
@@ -170,6 +179,16 @@ class RewardRaceService
                     'status' => 'unlocked'
                 ]
             );
+
+            if ($claim->wasRecentlyCreated) {
+                \App\Models\Notification::create([
+                    'user_id' => $participant->user_id,
+                    'shop_id' => $challenge->shop_id,
+                    'type' => 'reward_unlocked',
+                    'title' => '🏆 Reward Unlocked!',
+                    'message' => "You have unlocked: {$reward->name} in {$challenge->title}!",
+                ]);
+            }
         }
     }
 
