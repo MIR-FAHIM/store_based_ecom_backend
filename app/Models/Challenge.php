@@ -9,6 +9,8 @@ class Challenge extends Model
 {
     use HasFactory;
 
+    protected $table = 'reward_challenges';
+
     protected $fillable = [
         'shop_id',
         'title',

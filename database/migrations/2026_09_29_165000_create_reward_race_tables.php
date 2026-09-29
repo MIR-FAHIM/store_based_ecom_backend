@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('challenges', function (Blueprint $table) {
+        Schema::create('reward_challenges', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shop_id')->constrained('shops')->cascadeOnDelete();
             $table->string('title');
@@ -21,9 +21,9 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('challenge_rewards', function (Blueprint $table) {
+        Schema::create('reward_challenge_rewards', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('challenge_id')->constrained('challenges')->cascadeOnDelete();
+            $table->foreignId('challenge_id')->constrained('reward_challenges')->cascadeOnDelete();
             $table->integer('points_required');
             $table->enum('reward_type', ['PRODUCT', 'DISCOUNT', 'VOUCHER', 'FREE_DELIVERY', 'CUSTOM']);
             $table->string('reward_value')->nullable();
@@ -31,18 +31,18 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        Schema::create('challenge_participants', function (Blueprint $table) {
+        Schema::create('reward_challenge_participants', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('challenge_id')->constrained('challenges')->cascadeOnDelete();
+            $table->foreignId('challenge_id')->constrained('reward_challenges')->cascadeOnDelete();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
             $table->integer('current_points')->default(0);
             $table->timestamp('joined_at')->useCurrent();
             $table->timestamps();
         });
 
-        Schema::create('point_transactions', function (Blueprint $table) {
+        Schema::create('reward_point_transactions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('challenge_participant_id')->constrained('challenge_participants')->cascadeOnDelete();
+            $table->foreignId('challenge_participant_id')->constrained('reward_challenge_participants')->cascadeOnDelete();
             $table->foreignId('order_id')->nullable()->constrained('orders')->nullOnDelete();
             $table->integer('points');
             $table->enum('type', ['earned', 'reversed', 'adjusted', 'redeemed']);
@@ -52,8 +52,8 @@ return new class extends Migration
 
         Schema::create('reward_claims', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('challenge_participant_id')->constrained('challenge_participants')->cascadeOnDelete();
-            $table->foreignId('challenge_reward_id')->constrained('challenge_rewards')->cascadeOnDelete();
+            $table->foreignId('challenge_participant_id')->constrained('reward_challenge_participants')->cascadeOnDelete();
+            $table->foreignId('challenge_reward_id')->constrained('reward_challenge_rewards')->cascadeOnDelete();
             $table->enum('status', ['unlocked', 'claimed', 'redeemed', 'revoked'])->default('unlocked');
             $table->timestamp('redeemed_at')->nullable();
             $table->foreignId('order_id')->nullable()->constrained('orders')->nullOnDelete();
@@ -64,9 +64,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('reward_claims');
-        Schema::dropIfExists('point_transactions');
-        Schema::dropIfExists('challenge_participants');
-        Schema::dropIfExists('challenge_rewards');
-        Schema::dropIfExists('challenges');
+        Schema::dropIfExists('reward_point_transactions');
+        Schema::dropIfExists('reward_challenge_participants');
+        Schema::dropIfExists('reward_challenge_rewards');
+        Schema::dropIfExists('reward_challenges');
     }
 };

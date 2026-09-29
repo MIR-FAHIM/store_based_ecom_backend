@@ -9,6 +9,8 @@ class ChallengeReward extends Model
 {
     use HasFactory;
 
+    protected $table = 'reward_challenge_rewards';
+
     protected $fillable = [
         'challenge_id',
         'points_required',
