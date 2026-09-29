@@ -742,6 +742,12 @@ class OrderController extends Controller
                     'type' => 'order_payment',
                     'note' => 'Payment received for order #' . $order->order_number,
                 ]);
+
+                // Reward Race System Integration
+                app(\App\Service\RewardRaceService::class)->processOrderPoints($order);
+            } else if ($validated['status'] === 'cancelled') {
+                // Reward Race System Integration
+                app(\App\Service\RewardRaceService::class)->reverseOrderPoints($order);
             }
 
             return $this->success('Order status updated successfully', $order);

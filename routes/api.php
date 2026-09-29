@@ -169,6 +169,19 @@ Route::prefix('stores')->group(function () {
     Route::post('/{storeId}/subscription/subscribe', [SubscriptionPackageController::class, 'subscribe']);
 });
 
+Route::prefix('seller/challenges')->group(function () {
+    Route::post('/', [\App\Http\Controllers\RewardRaceController::class, 'createChallenge']);
+    Route::get('/', [\App\Http\Controllers\RewardRaceController::class, 'getSellerChallenges']);
+    Route::get('/{id}/participants', [\App\Http\Controllers\RewardRaceController::class, 'getChallengeLeaderboard']);
+});
+
+Route::prefix('customer')->group(function () {
+    Route::get('/shops/{store_slug}/challenge', [\App\Http\Controllers\RewardRaceController::class, 'getActiveChallenge']);
+    Route::get('/challenges/my', [\App\Http\Controllers\RewardRaceController::class, 'getMyChallenges']);
+    Route::post('/challenges/{id}/join', [\App\Http\Controllers\RewardRaceController::class, 'joinChallenge']);
+    Route::post('/rewards/{claimId}/claim', [\App\Http\Controllers\RewardRaceController::class, 'claimReward']);
+});
+
 Route::prefix('customer-preferences-store')->group(function () {
     Route::post('/add-seller-preference', [CustomerPreferenceStoreController::class, 'addSellerPreference']);
     Route::post('/add-customer-preference', [CustomerPreferenceStoreController::class, 'addCustomerPreference']);
