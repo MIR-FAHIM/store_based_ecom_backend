@@ -8,6 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        Schema::dropIfExists('reward_claims');
+        Schema::dropIfExists('reward_point_transactions');
+        Schema::dropIfExists('reward_challenge_participants');
+        Schema::dropIfExists('reward_challenge_rewards');
+        Schema::dropIfExists('reward_challenges');
+
         Schema::create('reward_challenges', function (Blueprint $table) {
             $table->id();
             $table->foreignId('shop_id')->constrained('shops')->cascadeOnDelete();
