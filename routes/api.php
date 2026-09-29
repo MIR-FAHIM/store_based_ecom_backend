@@ -174,6 +174,8 @@ Route::prefix('seller/challenges')->group(function () {
     Route::get('/', [\App\Http\Controllers\RewardRaceController::class, 'getSellerChallenges']);
     Route::get('/{id}/participants', [\App\Http\Controllers\RewardRaceController::class, 'getChallengeLeaderboard']);
     Route::get('/{id}/statistics', [\App\Http\Controllers\RewardRaceController::class, 'getChallengeStatistics']);
+    Route::patch('/{id}/status', [\App\Http\Controllers\RewardRaceController::class, 'toggleChallengeStatus']);
+    Route::delete('/{id}', [\App\Http\Controllers\RewardRaceController::class, 'deleteChallenge']);
 });
 
 Route::prefix('customer')->group(function () {

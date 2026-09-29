@@ -132,6 +132,55 @@ class RewardRaceController extends Controller
         }
     }
 
+    /**
+     * DELETE /api/seller/challenges/{id}
+     */
+    public function deleteChallenge($id, Request $request)
+    {
+        try {
+            $challenge = Challenge::findOrFail($id);
+
+            // Optional: You could verify that the challenge belongs to the authenticated seller's shop here
+            // if ($challenge->shop_id != $request->input('shop_id')) return $this->failed('Unauthorized', null, 403);
+
+            $challenge->delete();
+
+            return $this->success('Challenge deleted successfully');
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PATCH /api/seller/challenges/{id}/status
+     */
+    public function toggleChallengeStatus($id, Request $request)
+    {
+        try {
+            $challenge = Challenge::findOrFail($id);
+            
+            $validated = $request->validate([
+                'is_active' => 'required|boolean'
+            ]);
+
+            // If we are activating this challenge, optionally deactivate others for this shop
+            if ($validated['is_active']) {
+                Challenge::where('shop_id', $challenge->shop_id)
+                    ->where('id', '!=', $challenge->id)
+                    ->update(['is_active' => false]);
+            }
+
+            $challenge->is_active = $validated['is_active'];
+            $challenge->save();
+
+            return $this->success('Challenge status updated successfully', $challenge);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
     // --- CUSTOMER APIs ---
 
     /**
