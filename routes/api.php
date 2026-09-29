@@ -80,6 +80,10 @@ Route::prefix('users')->group(function () {
     Route::delete('/delete-seller/{id}', [UserController::class, 'deleteSeller']);
 });
 
+Route::prefix('customer')->group(function () {
+    Route::get('/buy-again', [ProductController::class, 'getBuyAgainProducts']);
+});
+
 Route::prefix('delivery-men')->group(function () {
     Route::get('/list', [UserController::class, 'getDeliveryMan']);
     Route::get('/shop/{shopId}', [UserController::class, 'getDeliveryMan']);
@@ -134,6 +138,7 @@ Route::prefix('products')->group(function () {
     Route::get('/category/wise', [ProductController::class, 'listCategoryProducts'])->withoutMiddleware('token');;
     Route::get('/list/featured', [ProductController::class, 'listFeaturedProducts'])->withoutMiddleware('token');;
     Route::get('/list/today-deal', [ProductController::class, 'listTodayDealProducts'])->withoutMiddleware('token');;
+    Route::get('/list/buy-again', [ProductController::class, 'getBuyAgainProducts']);
     Route::get('/list/stock-out', [ProductController::class, 'listStockOutProducts'])->withoutMiddleware('token');
     Route::get('/brand/{brandId}', [ProductController::class, 'getProductsByBrand'])->withoutMiddleware('token');
     Route::get('/details/{identifier}', [ProductController::class, 'getProductDetails'])->withoutMiddleware('token');;

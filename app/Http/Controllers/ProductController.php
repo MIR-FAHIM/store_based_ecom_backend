@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\Brand;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\ProductCreateErrorLog;
 use App\Models\ProductImage;
 use App\Models\Shops;
@@ -345,7 +347,19 @@ class ProductController extends Controller
         }
 
         $perPage = (int) $request->get('per_page', $defaultPerPage);
-        $storeProducts = $query->latest()->paginate($perPage);
+        $sortBy = $request->get('sort_by');
+
+        if ($sortBy === 'popular') {
+            $query->join('products', 'store_products.product_id', '=', 'products.id')
+                ->orderBy('products.num_of_sale', 'desc')
+                ->select('store_products.*');
+        } elseif ($sortBy === 'newest') {
+            $query->orderBy('store_products.created_at', 'desc');
+        } else {
+            $query->latest();
+        }
+
+        $storeProducts = $query->paginate($perPage);
         $storeProducts->setCollection($storeProducts->getCollection()->map(fn ($storeProduct) => $this->formatStoreProductForPublic($storeProduct)));
 
         return $storeProducts;
@@ -1398,6 +1412,83 @@ class ProductController extends Controller
             $products = $this->addStorefrontProductFields($products);
 
             return $this->success('Products fetched successfully', $products, 200,);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /customer/buy-again?store_slug={slug}&per_page=8
+     * Returns products previously purchased by the authenticated customer
+     */
+    public function getBuyAgainProducts(Request $request)
+    {
+        try {
+            $user = $request->attributes->get('api_user');
+            $perPage = (int) $request->get('per_page', 8);
+
+            if (!$user) {
+                $emptyPaginator = new \Illuminate\Pagination\LengthAwarePaginator([], 0, $perPage, 1);
+                return $this->success('Buy again products fetched successfully', $emptyPaginator, 200);
+            }
+
+            $storeId = null;
+            if ($request->filled('store_slug')) {
+                $store = Shops::where('slug', $request->query('store_slug'))->first();
+                $storeId = $store?->id;
+            }
+
+            $orderItemQuery = OrderItem::query()
+                ->whereHas('order', function ($q) use ($user) {
+                    $q->where('user_id', $user->id)
+                      ->where('status', '!=', 'cancelled');
+                });
+
+            if ($storeId) {
+                $orderItemQuery->where('shop_id', $storeId);
+            }
+
+            $productIds = $orderItemQuery->orderBy('id', 'desc')
+                ->pluck('product_id')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if (empty($productIds)) {
+                $emptyPaginator = new \Illuminate\Pagination\LengthAwarePaginator([], 0, $perPage, 1);
+                return $this->success('Buy again products fetched successfully', $emptyPaginator, 200);
+            }
+
+            $query = Product::query()
+                ->fromActiveShop()
+                ->with([
+                    'primaryImage',
+                    'images',
+                    'category',
+                    'subCategory',
+                    'brand',
+                    'productDiscount',
+                    'averageReview',
+                    'shop'
+                ])
+                ->whereIn('id', $productIds);
+
+            if (Schema::hasColumn('products', 'approved')) {
+                $query->where('approved', 1);
+            }
+
+            if (Schema::hasColumn('products', 'is_active')) {
+                $query->where('is_active', 1);
+            }
+
+            $implodedIds = implode(',', array_map('intval', $productIds));
+            $query->orderByRaw("FIELD(id, {$implodedIds})");
+
+            $products = $query->paginate($perPage);
+            $products = $this->addStorefrontProductFields($products);
+
+            return $this->success('Buy again products fetched successfully', $products, 200);
         } catch (\Throwable $e) {
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
