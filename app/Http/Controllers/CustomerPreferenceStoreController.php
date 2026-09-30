@@ -535,4 +535,69 @@ class CustomerPreferenceStoreController extends Controller
             return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
         }
     }
+
+    public function getCustomerStoreRelation(Request $request, $storeId)
+    {
+        try {
+            $authUser = $request->attributes->get('api_user');
+            if (!$authUser || !$this->isCustomerUser($authUser)) {
+                return $this->failed('Unauthorized or not a customer', null, 403);
+            }
+
+            $shop = Shops::find($storeId);
+            if (!$shop) {
+                return $this->failed('Store not found', null, 404);
+            }
+
+            // 1. Customer Baki / Ledger relation
+            $preference = CustomerPreferenceStore::where('customer_user_id', $authUser->id)
+                ->where('seller_id', $shop->user_id)
+                ->first();
+
+            $totalBaki = $preference ? (float) $preference->total_baki : 0.0;
+
+            $ledgerHistory = \App\Models\CustomerLedger::with(['order'])
+                ->where('shop_id', $storeId)
+                ->where('customer_id', $authUser->id)
+                ->latest()
+                ->take(50)
+                ->get();
+
+            // 2. Gamification / Challenge Participant relation
+            $participant = \App\Models\ChallengeParticipant::where('user_id', $authUser->id)
+                ->whereHas('challenge', function ($q) use ($storeId) {
+                    $q->where('shop_id', $storeId)->where('is_active', true);
+                })
+                ->with(['challenge.rewards'])
+                ->first();
+
+            $challengeData = null;
+            if ($participant) {
+                $targetPoints = $participant->challenge->rewards->max('points_required') ?? 0;
+                $challengeData = [
+                    'challenge_id' => $participant->challenge_id,
+                    'title' => $participant->challenge->title,
+                    'current_points' => $participant->current_points,
+                    'target_points' => $targetPoints,
+                    'remaining_points' => max(0, $targetPoints - $participant->current_points),
+                    'progress_percentage' => $targetPoints > 0 ? min(100, round(($participant->current_points / $targetPoints) * 100)) : 100,
+                ];
+            }
+
+            return $this->success('Customer store relation retrieved successfully', [
+                'store' => [
+                    'id' => $shop->id,
+                    'name' => $shop->name,
+                    'shop_name' => $shop->shop_name,
+                ],
+                'baki_khata' => [
+                    'total_baki' => round($totalBaki, 2),
+                    'ledger_history' => $ledgerHistory,
+                ],
+                'reward_race' => $challengeData,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
 }

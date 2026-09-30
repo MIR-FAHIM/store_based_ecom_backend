@@ -192,6 +192,7 @@ Route::prefix('customer-preferences-store')->group(function () {
     Route::get('/sellers-by-customer/{customerUserId?}', [CustomerPreferenceStoreController::class, 'getSellerByCustomer']);
     Route::delete('/remove', [CustomerPreferenceStoreController::class, 'removePreference']);
     Route::post('/set-active', [CustomerPreferenceStoreController::class, 'setActivePreference']);
+    Route::get('/relation/{storeId}', [CustomerPreferenceStoreController::class, 'getCustomerStoreRelation']);
 });
 
 Route::prefix('chat')->group(function () {
