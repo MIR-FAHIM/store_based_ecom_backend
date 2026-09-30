@@ -325,6 +325,7 @@ Route::prefix('orders')->group(function () {
 
     // Shop orders (via shops.user_id -> order_items.shop_id)
     Route::get('/shop/{userId}', [OrderController::class, 'listOrdersByShop']);
+    Route::get('/store/{shopId}/list', [OrderController::class, 'listOrdersForStore']);
     Route::get('/shop/{shopId}/report', [OrderController::class, 'shopOrderReport']);
     Route::get('/shop/{shopId}/check/{orderId}', [OrderController::class, 'checkShopOrder']);
     Route::get('/shop/{shopId}/user/{userId}', [OrderController::class, 'listOrdersByShopAndUser']);

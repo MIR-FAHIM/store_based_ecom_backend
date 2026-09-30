@@ -515,6 +515,45 @@ class OrderController extends Controller
     }
 
     /**
+     * GET /orders/store/{shopId}/list
+     * List full orders with items for a specific shop
+     */
+    public function listOrdersForStore($shopId, Request $request)
+    {
+        try {
+            $perPage = (int) $request->get('per_page', 20);
+
+            $shop = Shops::find($shopId);
+            if (!$shop) {
+                return $this->failed('Shop not found', null, 404);
+            }
+
+            $orders = Order::whereHas('items', function ($query) use ($shopId) {
+                    $query->where('shop_id', $shopId);
+                })
+                ->with(['items.product', 'user', 'userAddress.district', 'userAddress.division'])
+                ->latest()
+                ->paginate($perPage);
+
+            foreach ($orders as $order) {
+                $order->shop_name = $shop->shop_name ?: $shop->name;
+                $order->shop_id = (int) $shop->id;
+                $order->shop = $shop;
+
+                $totalQty = (int) $order->items->sum('qty');
+                $itemCount = $order->items->count();
+                $order->total_item_count = $totalQty > 0 ? $totalQty : $itemCount;
+                $order->total_items = $order->total_item_count;
+                $order->items_count = $itemCount;
+            }
+
+            return $this->success('Store orders fetched successfully', $orders);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * GET /orders/shop/{shopId}/check/{orderId}
      * Check a specific order for a shop (via order_items.shop_id)
      */
