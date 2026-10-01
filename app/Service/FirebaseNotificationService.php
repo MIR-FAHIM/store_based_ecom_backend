@@ -14,7 +14,7 @@ class FirebaseNotificationService
     private const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
     private const JWT_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 
-    public function sendToUser(User $user, string $title, string $body, array $data = [], ?string $image = null): array
+    public function sendToUser(User $user, string $title, string $body, array $data = [], ?string $image = null, array $options = []): array
     {
         if (!$user->device_token) {
             throw new FirebaseNotificationException('Device token not found for this user', [
@@ -22,10 +22,10 @@ class FirebaseNotificationService
             ], 422);
         }
 
-        return $this->sendToToken($user->device_token, $title, $body, $data, $image);
+        return $this->sendToToken($user->device_token, $title, $body, $data, $image, $options);
     }
 
-    public function sendToToken(string $deviceToken, string $title, string $body, array $data = [], ?string $image = null): array
+    public function sendToToken(string $deviceToken, string $title, string $body, array $data = [], ?string $image = null, array $options = []): array
     {
         $credentials = $this->credentials();
         $projectId = $this->projectId($credentials);
@@ -48,6 +48,14 @@ class FirebaseNotificationService
         $stringData = $this->stringData($data);
         if (!empty($stringData)) {
             $message['data'] = $stringData;
+        }
+
+        if (!empty($options['android'])) {
+            $message['android'] = $options['android'];
+        }
+
+        if (!empty($options['apns'])) {
+            $message['apns'] = $options['apns'];
         }
 
         try {

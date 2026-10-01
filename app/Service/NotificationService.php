@@ -38,7 +38,9 @@ class NotificationService
                     'notification_id' => (string) $notification->id,
                     'notification_type' => $notification->type,
                     'order_id' => $notification->order_id ? (string) $notification->order_id : '',
-                ]
+                ],
+                null,
+                $attributes['options'] ?? []
             );
         } catch (FirebaseNotificationException $e) {
             Log::warning('Notification push failed', [
@@ -70,6 +72,21 @@ class NotificationService
             'title' => 'New Order Received',
             'message' => 'You received a new order #' . $order->order_number . '.',
             'data' => ['order_id' => $order->id, 'shop_id' => $shop->id],
+            'options' => [
+                'android' => [
+                    'notification' => [
+                        'channel_id' => 'new_order_channel_v1',
+                        'sound' => 'new_order'
+                    ]
+                ],
+                'apns' => [
+                    'payload' => [
+                        'aps' => [
+                            'sound' => 'new_order.wav'
+                        ]
+                    ]
+                ]
+            ]
         ]);
     }
 
