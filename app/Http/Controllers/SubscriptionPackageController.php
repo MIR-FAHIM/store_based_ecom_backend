@@ -383,4 +383,68 @@ class SubscriptionPackageController extends Controller
             default => null,
         };
     }
+
+    public function assignToStore(Request $request, $storeId)
+    {
+        try {
+            $user = $request->attributes->get('api_user');
+            if (!$this->isAdminUser($user)) {
+                return $this->failed('Only admin can assign a subscription package manually', null, 403);
+            }
+
+            $store = Shops::find($storeId);
+            if (!$store) {
+                return $this->failed('Store not found', null, 404);
+            }
+
+            $validated = $request->validate([
+                'subscription_package_id' => ['required', 'integer', 'exists:subscription_packages,id'],
+                'billing_cycle' => ['nullable', Rule::in(['monthly', 'yearly', 'lifetime'])],
+                'payment_method' => ['nullable', 'string', 'max:50'],
+                'note' => ['nullable', 'string', 'max:255'],
+            ]);
+
+            $package = SubscriptionPackage::find($validated['subscription_package_id']);
+            if (!$package) {
+                return $this->failed('Subscription package not found', null, 404);
+            }
+
+            $billingCycle = $validated['billing_cycle'] ?? $package->billing_cycle;
+            $startsAt = Carbon::now();
+
+            StoreSubscription::where('store_id', $store->id)
+                ->whereIn('status', ['pending', 'active'])
+                ->update(['status' => 'cancelled']);
+
+            $subscription = StoreSubscription::create([
+                'store_id' => $store->id,
+                'subscription_package_id' => $package->id,
+                'status' => 'active',
+                'starts_at' => $startsAt,
+                'ends_at' => $this->calculateEndsAt($startsAt, $billingCycle),
+                'trial_ends_at' => $package->trial_days ? $startsAt->copy()->addDays((int) $package->trial_days) : null,
+                'price' => $package->price,
+                'currency' => 'BDT',
+                'billing_cycle' => $billingCycle,
+                'payment_status' => 'paid',
+                'payment_reference' => 'ADMIN_ASSIGNED_' . strtoupper($validated['payment_method'] ?? 'MANUAL'),
+            ]);
+
+            $store->update([
+                'product_limit' => $package->max_products,
+            ]);
+
+            if ($store->user_id) {
+                User::whereKey($store->user_id)->update(['must_buy_package' => 0]);
+            }
+
+            return $this->success('Subscription assigned to store successfully', [
+                'subscription' => $subscription->load('package'),
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->failed('Validation failed', $e->errors(), 422);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
+    }
 }

@@ -167,6 +167,7 @@ Route::prefix('shops')->group(function () {
 Route::prefix('stores')->group(function () {
     Route::get('/{storeId}/subscription', [SubscriptionPackageController::class, 'storeCurrentSubscription']);
     Route::post('/{storeId}/subscription/subscribe', [SubscriptionPackageController::class, 'subscribe']);
+    Route::post('/{storeId}/subscription/assign', [SubscriptionPackageController::class, 'assignToStore']);
 });
 
 Route::prefix('seller/challenges')->group(function () {
