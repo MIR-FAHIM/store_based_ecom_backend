@@ -317,12 +317,13 @@ class ReportController extends Controller
         $hasPaymentMethod = Schema::hasColumn('orders', 'payment_method');
         $hasOrderType = Schema::hasColumn('orders', 'order_type');
         $hasShopIdInOrders = Schema::hasColumn('orders', 'shop_id');
+        $hasPaidAmount = Schema::hasColumn('orders', 'paid_amount');
+        $digitalPaymentMethods = ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer', 'aamarpay', 'online', 'gateway'];
 
         // 1. OPENING CASH
         $openingCashLog = StoreCashLog::where('shop_id', $shopId)
             ->where('type', 'OPENING_CASH')
-            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
-            ->orderBy('entry_date', 'desc')
+            ->whereDate('entry_date', $startDateStr)
             ->first();
         $openingCash = $openingCashLog ? (float) $openingCashLog->amount : 0.0;
 
@@ -337,7 +338,7 @@ class ReportController extends Controller
                 }
             });
 
-        // 2. POS CASH SALES (Orders placed in store with cash or paid_amount)
+        // 2. POS CASH SALES (only real drawer cash, not all partial/digital payments)
         $posCashSalesQuery = (clone $baseOrderQuery)
             ->where(function ($q) use ($hasOrderType) {
                 if ($hasOrderType) {
@@ -347,19 +348,28 @@ class ReportController extends Controller
                     $q->where('platform', 'pos');
                 }
             })
-            ->where(function ($q) use ($hasPaymentMethod) {
-                if ($hasPaymentMethod) {
+            ->where(function ($q) use ($hasPaymentMethod, $hasPaidAmount) {
+                if ($hasPaymentMethod && $hasPaidAmount) {
                     $q->where('payment_method', 'cash')
-                      ->orWhere('paid_amount', '>', 0);
+                        ->orWhere(function ($partialBakiQuery) {
+                            $partialBakiQuery->where('payment_method', 'baki')
+                                ->where('paid_amount', '>', 0);
+                        });
+                } elseif ($hasPaymentMethod) {
+                    $q->where('payment_method', 'cash');
                 } else {
                     $q->where('payment_status', 'paid')
                       ->orWhere('paid_amount', '>', 0);
                 }
             });
 
-        $posCashSalesSumExpression = $hasPaymentMethod 
-            ? "CASE WHEN payment_method = 'cash' THEN total ELSE paid_amount END" 
-            : "CASE WHEN payment_status = 'paid' THEN total ELSE paid_amount END";
+        if ($hasPaymentMethod && $hasPaidAmount) {
+            $posCashSalesSumExpression = "CASE WHEN payment_method = 'cash' THEN CASE WHEN paid_amount > 0 THEN paid_amount ELSE total END WHEN payment_method = 'baki' THEN paid_amount ELSE 0 END";
+        } elseif ($hasPaymentMethod) {
+            $posCashSalesSumExpression = "CASE WHEN payment_method = 'cash' THEN total ELSE 0 END";
+        } else {
+            $posCashSalesSumExpression = "CASE WHEN payment_status = 'paid' THEN total ELSE paid_amount END";
+        }
 
         $posCashSales = (float) $posCashSalesQuery->sum(DB::raw($posCashSalesSumExpression));
 
@@ -398,10 +408,10 @@ class ReportController extends Controller
             ->whereBetween('entry_date', [$startDateStr, $endDateStr])
             ->sum('amount');
 
-        // 6. DIGITAL PAYMENTS (bKash, Nagad, Card, Bank)
+        // 6. DIGITAL PAYMENTS (bKash, Nagad, Card, Bank, AamarPay)
         $digitalPaymentsQuery = (clone $baseOrderQuery);
         if ($hasPaymentMethod) {
-            $digitalPaymentsQuery->whereIn('payment_method', ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer']);
+            $digitalPaymentsQuery->whereIn('payment_method', $digitalPaymentMethods);
         } else {
             $digitalPaymentsQuery->where('payment_status', 'paid')->where('platform', 'online');
         }
@@ -409,7 +419,7 @@ class ReportController extends Controller
 
         $digitalPaymentsLedger = (float) CustomerLedger::where('shop_id', $shopId)
             ->where('type', 'PAYMENT')
-            ->whereIn('payment_method', ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer'])
+            ->whereIn('payment_method', $digitalPaymentMethods)
             ->whereBetween('created_at', [$start, $end])
             ->sum('paid_amount');
 
@@ -427,7 +437,18 @@ class ReportController extends Controller
             ->whereBetween('entry_date', [$startDateStr, $endDateStr])
             ->sum('amount');
 
-        // 9. DRAWER ADJUSTMENTS
+        // 9. OWNER CASH MOVEMENTS (not revenue/expense, but they do change drawer cash)
+        $ownerDeposits = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'OWNER_DEPOSIT')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
+
+        $ownerWithdrawals = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'OWNER_WITHDRAWAL')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
+
+        // 10. DRAWER ADJUSTMENTS
         $drawerAdjIn = (float) StoreCashLog::where('shop_id', $shopId)
             ->where('type', 'DRAWER_ADJUSTMENT')
             ->where('flow', 'IN')
@@ -442,7 +463,7 @@ class ReportController extends Controller
 
         $netDrawerAdj = round($drawerAdjIn - $drawerAdjOut, 2);
 
-        // 10. BAKI DEBT METRICS
+        // 11. BAKI DEBT METRICS
         $newBakiGiven = (float) CustomerLedger::where('shop_id', $shopId)
             ->where('type', 'DUE')
             ->whereBetween('created_at', [$start, $end])
@@ -459,18 +480,54 @@ class ReportController extends Controller
             ->sum('total_baki');
 
         // CALCULATE EXPECTED CASH IN DRAWER
-        $totalCashIn = round($openingCash + $posCashSales + $onlineCodCash + $bakiRecoveredCash + $quickCashSales + $drawerAdjIn, 2);
-        $totalCashOut = round($shopExpenses + $customerRefunds + $drawerAdjOut, 2);
+        $totalCashIn = round($openingCash + $posCashSales + $onlineCodCash + $bakiRecoveredCash + $quickCashSales + $ownerDeposits + $drawerAdjIn, 2);
+        $totalCashOut = round($shopExpenses + $customerRefunds + $ownerWithdrawals + $drawerAdjOut, 2);
         $expectedCashInDrawer = round($totalCashIn - $totalCashOut, 2);
+
+        $closingCashLog = StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'CLOSING_CASH')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->orderBy('entry_date', 'desc')
+            ->first();
+        $actualClosingCash = $closingCashLog ? (float) $closingCashLog->amount : null;
+        $drawerDifference = $actualClosingCash !== null ? round($actualClosingCash - $expectedCashInDrawer, 2) : null;
+
+        $carryForwardCash = (float) StoreCashLog::where('shop_id', $shopId)
+            ->where('type', 'CARRY_FORWARD')
+            ->whereBetween('entry_date', [$startDateStr, $endDateStr])
+            ->sum('amount');
 
         return [
             'from' => $start->toIso8601String(),
             'to' => $end->toIso8601String(),
             'kpi_cards' => [
                 'expected_cash_in_drawer' => $expectedCashInDrawer,
+                'actual_closing_cash' => $actualClosingCash,
+                'drawer_difference' => $drawerDifference,
+                'carry_forward_cash' => round($carryForwardCash, 2),
                 'total_digital_payments' => $totalDigitalPayments,
                 'today_new_baki' => round($newBakiGiven, 2),
                 'total_store_outstanding_baki' => round($totalStoreOutstandingBaki, 2),
+            ],
+            'cash_formula' => [
+                'cash_in' => [
+                    'opening_cash' => round($openingCash, 2),
+                    'pos_cash_sales' => round($posCashSales, 2),
+                    'online_cod_cash' => round($onlineCodCash, 2),
+                    'baki_recovered_cash' => round($bakiRecoveredCash, 2),
+                    'quick_cash_sales' => round($quickCashSales, 2),
+                    'owner_deposits' => round($ownerDeposits, 2),
+                    'drawer_adjustment_in' => round($drawerAdjIn, 2),
+                    'total' => $totalCashIn,
+                ],
+                'cash_out' => [
+                    'shop_expenses' => round($shopExpenses, 2),
+                    'customer_refunds' => round($customerRefunds, 2),
+                    'owner_withdrawals' => round($ownerWithdrawals, 2),
+                    'drawer_adjustment_out' => round($drawerAdjOut, 2),
+                    'total' => $totalCashOut,
+                ],
+                'expected_cash_in_drawer' => $expectedCashInDrawer,
             ],
             'ledger_rows' => [
                 [
@@ -480,6 +537,14 @@ class ReportController extends Controller
                     'debit' => 0.00,
                     'credit' => $openingCash,
                     'net_impact' => $openingCash,
+                ],
+                [
+                    'section' => 'OWNER_MOVEMENT',
+                    'title' => 'Owner Cash Added To Drawer',
+                    'flow_type' => 'Owner Deposit (+)',
+                    'debit' => 0.00,
+                    'credit' => round($ownerDeposits, 2),
+                    'net_impact' => round($ownerDeposits, 2),
                 ],
                 [
                     'section' => 'REVENUE_INFLOW',
@@ -522,6 +587,14 @@ class ReportController extends Controller
                     'net_impact' => $totalDigitalPayments,
                 ],
                 [
+                    'section' => 'OWNER_MOVEMENT',
+                    'title' => 'Owner Cash Withdrawal From Drawer',
+                    'flow_type' => 'Owner Withdrawal (-)',
+                    'debit' => round($ownerWithdrawals, 2),
+                    'credit' => 0.00,
+                    'net_impact' => -round($ownerWithdrawals, 2),
+                ],
+                [
                     'section' => 'CASH_OUTFLOW',
                     'title' => 'Shop Daily Expenses',
                     'flow_type' => 'Cash Out (-)',
@@ -546,6 +619,22 @@ class ReportController extends Controller
                     'net_impact' => $netDrawerAdj,
                 ],
                 [
+                    'section' => 'CLOSING_BALANCE',
+                    'title' => 'Actual Closing Cash Count',
+                    'flow_type' => 'Counted Cash',
+                    'debit' => 0.00,
+                    'credit' => $actualClosingCash !== null ? round($actualClosingCash, 2) : 0.00,
+                    'net_impact' => $drawerDifference,
+                ],
+                [
+                    'section' => 'CLOSING_BALANCE',
+                    'title' => 'Cash Carried Forward',
+                    'flow_type' => 'Next Opening Cash',
+                    'debit' => 0.00,
+                    'credit' => round($carryForwardCash, 2),
+                    'net_impact' => round($carryForwardCash, 2),
+                ],
+                [
                     'section' => 'BAKI_FLOW',
                     'title' => 'New Baki Given (Unpaid Sales)',
                     'flow_type' => 'Customer Debt (+)',
@@ -566,6 +655,11 @@ class ReportController extends Controller
                 'total_debit' => round($totalCashOut + $newBakiGiven, 2),
                 'total_credit' => round($totalCashIn + $totalDigitalPayments, 2),
                 'expected_cash_drawer' => $expectedCashInDrawer,
+                'actual_closing_cash' => $actualClosingCash,
+                'drawer_difference' => $drawerDifference,
+                'owner_deposits' => round($ownerDeposits, 2),
+                'owner_withdrawals' => round($ownerWithdrawals, 2),
+                'carry_forward_cash' => round($carryForwardCash, 2),
                 'total_digital' => $totalDigitalPayments,
                 'overall_store_baki' => round($totalStoreOutstandingBaki, 2),
             ],

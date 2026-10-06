@@ -768,6 +768,13 @@ class OrderController extends Controller
             if ($validated['status'] === 'completed') {
                 // Also update all order items to completed
                 $order->payment_status = 'paid';
+                if (empty($order->payment_method)) {
+                    $order->payment_method = 'cash';
+                }
+                if ($order->payment_method === 'cash') {
+                    $order->paid_amount = round((float) $order->total, 2);
+                    $order->due_amount = 0;
+                }
                 $order->save();
                 OrderItem::where('order_id', $order->id)
                     ->update(['status' => 'completed']);

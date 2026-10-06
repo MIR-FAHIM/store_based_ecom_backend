@@ -626,9 +626,14 @@ class AmarPayService
                     'paid_at' => $lockedPayment->paid_at ?: now(),
                 ]);
 
-                Order::whereIn('id', $orderIds)->update(['payment_status' => 'paid']);
-
                 foreach ($orders as $order) {
+                    $order->forceFill([
+                        'payment_status' => 'paid',
+                        'payment_method' => 'aamarpay',
+                        'paid_amount' => round((float) $order->total, 2),
+                        'due_amount' => 0,
+                    ])->save();
+
                     Transaction::firstOrCreate(
                         [
                             'order_id' => $order->id,

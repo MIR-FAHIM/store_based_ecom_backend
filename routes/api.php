@@ -252,6 +252,10 @@ Route::prefix('seller/stores/{storeId}')->group(function () {
     Route::post('/cash-logs/opening', [StoreCashLogController::class, 'setOpeningCash']);
     Route::post('/cash-logs/quick-cash', [StoreCashLogController::class, 'addQuickCash']);
     Route::post('/cash-logs/expense', [StoreCashLogController::class, 'addExpense']);
+    Route::post('/cash-logs/withdrawal', [StoreCashLogController::class, 'addOwnerWithdrawal']);
+    Route::post('/cash-logs/deposit', [StoreCashLogController::class, 'addOwnerDeposit']);
+    Route::post('/cash-logs/closing', [StoreCashLogController::class, 'setClosingCash']);
+    Route::post('/cash-logs/carry-forward', [StoreCashLogController::class, 'carryForwardCash']);
     Route::post('/cash-logs/adjust-drawer', [StoreCashLogController::class, 'adjustDrawer']);
 
     // Financial & Cash Flow Summary Report
