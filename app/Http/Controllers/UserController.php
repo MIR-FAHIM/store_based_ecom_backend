@@ -217,10 +217,21 @@ class UserController extends Controller
             ]);
 
             // Create Shop for this seller
+            $shopName = $request->input('shop_name', $user->name . "'s Shop");
+            
+            $baseSlug = Str::slug($shopName) ?: 'shop';
+            $slug = $baseSlug;
+            $counter = 1;
+            while (Shops::where('slug', $slug)->exists()) {
+                $slug = $baseSlug . '-' . $counter;
+                $counter++;
+            }
+
             Shops::create([
                 'user_id' => $user->id,
                 'name' => $user->name ?? 'Shop of ' . ($user->email ?? 'seller'),
-                'shop_name' => $request->input('shop_name', $user->name . "'s Shop"),
+                'shop_name' => $shopName,
+                'slug' => $slug,
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'address' => $user->address,
