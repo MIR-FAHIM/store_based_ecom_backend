@@ -44,12 +44,18 @@ class CartController extends Controller
 
     private function getFinalSalePriceFromValues(float $price, ?float $discount, ?string $discountType): float
     {
-        if (!$discount || !$discountType) {
-            return round($price, 2);
+        if (!$discount || $discount <= 0 || !$discountType) {
+            return round(max(0, $price), 2);
         }
 
-        if ($discountType === 'percent') {
+        $type = strtolower(trim((string) $discountType));
+
+        if ($type === 'percent' || $type === 'percentage') {
             return round(max(0, $price - ($price * ($discount / 100))), 2);
+        }
+
+        if ($type === 'amount' || $type === 'flat') {
+            return round(max(0, $price - $discount), 2);
         }
 
         return round(max(0, $price - $discount), 2);
@@ -150,7 +156,6 @@ class CartController extends Controller
             $storeProduct = null;
             $storeProductId = null;
             $shopId = $product->shop_id ?? null;
-            $unitPrice = !is_null($product->unit_price) ? (float) $product->unit_price : null;
 
             if ($store) {
                 $storeProductQuery = StoreProduct::where('store_id', $store->id)
@@ -174,18 +179,13 @@ class CartController extends Controller
 
                 $storeProductId = (int) $storeProduct->id;
                 $shopId = $store->id;
-                $price = (float) ($storeProduct->price ?? $product->unit_price ?? 0);
-                $discount = $storeProduct->discount !== null ? (float) $storeProduct->discount : ($product->discount !== null ? (float) $product->discount : null);
-                $discountType = $storeProduct->discount_type ?? $product->discount_type ?? null;
-                $unitPrice = $this->getFinalSalePriceFromValues($price, $discount, $discountType);
-            } elseif (!is_null($unitPrice) && !is_null($product->discount) && $product->discount > 0) {
-                if ($product->discount_type === 'percent') {
-                    $unitPrice = $unitPrice - ($unitPrice * ($product->discount / 100));
-                } elseif ($product->discount_type === 'amount') {
-                    $unitPrice = $unitPrice - $product->discount;
-                }
-                if ($unitPrice < 0) $unitPrice = 0;
             }
+
+            // Calculate discount price strictly from products table using unit_price, discount, and discount_type
+            $basePrice = !is_null($product->unit_price) ? (float) $product->unit_price : (float) ($storeProduct?->price ?? 0);
+            $discount = !is_null($product->discount) ? (float) $product->discount : null;
+            $discountType = $product->discount_type ? (string) $product->discount_type : null;
+            $unitPrice = $this->getFinalSalePriceFromValues($basePrice, $discount, $discountType);
 
             DB::beginTransaction();
 

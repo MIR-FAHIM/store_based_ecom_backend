@@ -226,19 +226,19 @@ class ProductController extends Controller
     private function formatStoreProductForPublic(StoreProduct $storeProduct): array
     {
         $product = $storeProduct->product;
-        $price = (float) ($storeProduct->price ?? $product->unit_price ?? 0);
-        $discount = $storeProduct->discount !== null ? (float) $storeProduct->discount : ($product->discount !== null ? (float) $product->discount : null);
-        $discountType = $storeProduct->discount_type ?? $product->discount_type ?? null;
+        $price = (float) ($product->unit_price ?? 0);
+        $discount = $product->discount !== null ? (float) $product->discount : null;
+        $discountType = $product->discount_type ?? null;
         $salePrice = $this->getFinalSalePriceFromValues($price, $discount, $discountType);
 
         return [
             'store_product_id' => (int) $storeProduct->id,
             'id' => (int) $product->id,
             'product_id' => (int) $product->id,
-            'name' => $storeProduct->title_override ?: $product->name,
+            'name' => $product->name,
             'master_name' => $product->name,
             'slug' => $product->slug,
-            'description' => $storeProduct->description_override ?: $product->description,
+            'description' => $product->description,
             'price' => $price,
             'unit_price' => $price,
             'sale_price' => $salePrice,
@@ -248,16 +248,16 @@ class ProductController extends Controller
             'primary_image' => $product->primaryImage,
             'category_id' => $product->category_id ? (int) $product->category_id : null,
             'brand_id' => $product->brand_id ? (int) $product->brand_id : null,
-            'stock' => $storeProduct->stock ?? $product->current_stock,
-            'current_stock' => $storeProduct->stock ?? $product->current_stock,
-            'sku' => $storeProduct->sku,
-            'shop_id' => (int) $storeProduct->store_id,
-            'store_id' => (int) $storeProduct->store_id,
+            'stock' => $product->current_stock,
+            'current_stock' => $product->current_stock,
+            'sku' => $product->sku ?: $storeProduct->sku,
+            'shop_id' => (int) ($product->shop_id ?? $storeProduct->store_id),
+            'store_id' => (int) ($product->shop_id ?? $storeProduct->store_id),
             'shop' => $storeProduct->store,
             'store' => $storeProduct->store,
-            'featured' => (bool) $storeProduct->is_featured,
-            'is_featured' => (bool) $storeProduct->is_featured,
-            'todays_deal' => (bool) $storeProduct->todays_deal,
+            'featured' => (bool) ($product->featured ?? $storeProduct->is_featured),
+            'is_featured' => (bool) ($product->featured ?? $storeProduct->is_featured),
+            'todays_deal' => (bool) ($product->todays_deal ?? $storeProduct->todays_deal),
             'category' => $product->category,
             'brand' => $product->brand,
             'average_review' => $product->averageReview,
