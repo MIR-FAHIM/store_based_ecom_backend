@@ -233,7 +233,7 @@ class CategoryController extends Controller
     public function getCategoryDetails($id)
     {
         try {
-            $category = Category::find($id);
+            $category = Category::with(['parent', 'banner', 'coverImage', 'iconImage'])->find($id);
 
             if (!$category) {
                 return $this->failed('Category not found', null, 404);
@@ -305,6 +305,8 @@ class CategoryController extends Controller
             $category->fill($validated);
             $category->save();
 
+            $category->load(['parent', 'banner', 'iconImage', 'coverImage']);
+
             return $this->success('Category updated successfully', $category);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->failed('Validation failed', $e->errors(), 422);
@@ -367,33 +369,38 @@ class CategoryController extends Controller
      * GET /categories/with-children
      * List categories grouped by parent_id with all children
      */
-public function getCategoryWithAllChildren()
-{
-    try {
-        $categories = Category::with('banner')
-            ->where('is_active', 1)
-            ->orderByRaw('COALESCE(order_level, 999999) ASC')
-            ->get();
+    public function getCategoryWithAllChildren(Request $request)
+    {
+        try {
+            $query = Category::with(['banner', 'coverImage', 'iconImage']);
 
-        // Group by parent_id, casting to int so null → 0 and "5" === 5
-        $byParent = $categories->groupBy(function ($category) {
-            return (int) ($category->parent_id ?? 0);
-        });
+            // For admin category control, include_inactive=1 or all=1 shows inactive categories as well
+            if (!$request->boolean('include_inactive') && !$request->boolean('all')) {
+                $query->where('is_active', 1);
+            }
 
-        $buildTree = function (int $parentId) use (&$buildTree, $byParent) {
-            $children = $byParent->get($parentId, collect());
+            $categories = $query->orderByRaw('COALESCE(order_level, 999999) ASC')
+                ->get();
 
-            return $children->map(function ($category) use (&$buildTree) {
-                $category->setRelation('children', $buildTree((int) $category->id));
-                return $category;
+            // Group by parent_id, casting to int so null → 0 and "5" === 5
+            $byParent = $categories->groupBy(function ($category) {
+                return (int) ($category->parent_id ?? 0);
             });
-        };
 
-        $tree = $buildTree(0);
+            $buildTree = function (int $parentId) use (&$buildTree, $byParent) {
+                $children = $byParent->get($parentId, collect());
 
-        return $this->success('Categories with children fetched successfully', $tree);
-    } catch (\Throwable $e) {
-        return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+                return $children->map(function ($category) use (&$buildTree) {
+                    $category->setRelation('children', $buildTree((int) $category->id));
+                    return $category;
+                });
+            };
+
+            $tree = $buildTree(0);
+
+            return $this->success('Categories with children fetched successfully', $tree);
+        } catch (\Throwable $e) {
+            return $this->failed('Something went wrong', ['error' => $e->getMessage()], 500);
+        }
     }
-}
 }

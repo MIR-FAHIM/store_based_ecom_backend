@@ -101,7 +101,7 @@ Route::prefix('categories')->group(function () {
     Route::get('/with-children', [CategoryController::class, 'getCategoryWithAllChildren'])->withoutMiddleware('token');
     Route::get('/details/{id}', [CategoryController::class, 'getCategoryDetails'])->withoutMiddleware('token');
     Route::get('/children/{id}', [CategoryController::class, 'getCategoryChildren'])->withoutMiddleware('token');
-    Route::put('/update/{id}', [CategoryController::class, 'updateCategory']);
+    Route::match(['put', 'post'], '/update/{id}', [CategoryController::class, 'updateCategory']);
 
     Route::delete('/delete/{id}', [CategoryController::class, 'deleteCategory']);
 });
