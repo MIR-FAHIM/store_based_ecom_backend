@@ -107,6 +107,7 @@ Route::prefix('categories')->group(function () {
 });
 
 Route::prefix('public/stores')->group(function () {
+    Route::get('/{slug}/availability', [ShopController::class, 'storefrontAvailability'])->withoutMiddleware('token');
     Route::get('/{slug}/categories', [CategoryController::class, 'publicStoreCategories'])->withoutMiddleware('token');
 });
 

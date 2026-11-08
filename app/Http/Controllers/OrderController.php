@@ -107,6 +107,15 @@ class OrderController extends Controller
             $groupedItems = $cartItems->groupBy(function ($cartItem) {
                 return $this->resolveCartItemShopId($cartItem) ?? 'unknown';
             });
+            $shopIds = $groupedItems->keys()->filter(fn ($shopId) => $shopId !== 'unknown')->values();
+            if ($shopIds->isNotEmpty()) {
+                $shops = Shops::whereKey($shopIds->all())->orderBy('id')->lockForUpdate()->get(['id', 'status']);
+                if ($shops->count() !== $shopIds->count() || $shops->contains(fn (Shops $shop) => $shop->status !== 'active')) {
+                    DB::rollBack();
+                    return $this->failed('A store in this cart is currently unavailable', null, 409);
+                }
+            }
+
             $shippingShares = $this->splitAmountAcrossOrders($shippingFee, $groupedItems->count());
 
             $orders = [];

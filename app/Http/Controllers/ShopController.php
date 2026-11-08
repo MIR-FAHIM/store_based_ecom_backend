@@ -11,6 +11,13 @@ use Illuminate\Validation\Rule;
 
 class ShopController extends Controller
 {
+    private const STATUSES = ['active', 'inactive', 'pending', 'suspended', 'banned'];
+
+    private function canChangeShopStatus(Request $request): bool
+    {
+        return $request->attributes->get('api_user')?->user_type === 'admin';
+    }
+
     private function success($message, $data = null, int $code = 200)
     {
         return response()->json([
@@ -277,6 +284,19 @@ class ShopController extends Controller
         }
     }
     /**
+     * GET /public/stores/{slug}/availability
+     */
+    public function storefrontAvailability(string $slug)
+    {
+        $available = Shops::where('slug', $slug)->where('status', 'active')->exists();
+
+        return ($available
+            ? $this->success('Store is available', ['available' => true])
+            : $this->failed('This store is currently unavailable', null, 404))
+            ->header('Cache-Control', 'no-store');
+    }
+
+    /**
      * GET /shops/details/{id}
      */
     public function getShopDetails($id)
@@ -358,7 +378,7 @@ class ShopController extends Controller
     }
 
     /**
-     * PUT /shops/update/{id}
+     * POST /shops/update/{id}
      */
     public function updateShop(Request $request, $id)
     {
@@ -391,9 +411,16 @@ class ShopController extends Controller
                 'lat' => ['nullable', 'numeric'],
                 'lon' => ['nullable', 'numeric'],
 
-                'status' => ['nullable', 'string', 'max:50'],
+                'status' => ['sometimes', 'required', 'string', Rule::in(self::STATUSES)],
                 'product_limit' => ['nullable', 'integer', 'min:0'],
             ]);
+
+            if (array_key_exists('status', $validated) && !$this->canChangeShopStatus($request)) {
+                if ($validated['status'] !== $shop->status) {
+                    return $this->failed('Only an admin can change shop status', null, 403);
+                }
+                unset($validated['status']);
+            }
 
             // Normalize shop code before update.
             if (!empty($validated['code'])) {
@@ -434,6 +461,10 @@ class ShopController extends Controller
     public function updateShopStatus(Request $request, $id)
     {
         try {
+            if (!$this->canChangeShopStatus($request)) {
+                return $this->failed('Only an admin can change shop status', null, 403);
+            }
+
             $shop = Shops::find($id);
 
             if (!$shop) {
@@ -441,11 +472,10 @@ class ShopController extends Controller
             }
 
             $validated = $request->validate([
-                'status' => ['required', 'string', 'max:50'], // pending, active, suspended, banned
+                'status' => ['required', 'string', Rule::in(self::STATUSES)],
             ]);
 
-            $shop->status = $validated['status'];
-            $shop->save();
+            $shop->update(['status' => $validated['status']]);
 
             return $this->success('Shop status updated successfully', $shop);
         } catch (\Illuminate\Validation\ValidationException $e) {
