@@ -318,7 +318,7 @@ class ReportController extends Controller
         $hasOrderType = Schema::hasColumn('orders', 'order_type');
         $hasShopIdInOrders = Schema::hasColumn('orders', 'shop_id');
         $hasPaidAmount = Schema::hasColumn('orders', 'paid_amount');
-        $digitalPaymentMethods = ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer', 'aamarpay', 'online', 'gateway'];
+        $digitalPaymentMethods = ['bkash', 'nagad', 'rocket', 'card', 'bank', 'bank_transfer', 'aamarpay', 'sslcommerz', 'online', 'gateway'];
 
         // 1. OPENING CASH
         $openingCashLog = StoreCashLog::where('shop_id', $shopId)
@@ -818,20 +818,20 @@ class ReportController extends Controller
 
             // Summary Totals
             $totalRevenue = (float) OnlinePayment::where('payment_type', 'store_subscription')
-                ->where('status', 'success')
+                ->whereIn('status', ['success', 'completed'])
                 ->sum('amount');
 
             $totalBought = (int) OnlinePayment::where('payment_type', 'store_subscription')->count();
 
             $pendingPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
                 ->where(function ($q) {
-                    $q->where('status', 'pending')
+                    $q->whereIn('status', ['initiated', 'pending'])
                       ->orWhereNull('status');
                 })
                 ->count();
 
             $completedPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
-                ->where('status', 'success')
+                ->whereIn('status', ['success', 'completed'])
                 ->count();
 
             $failedPaymentsCount = (int) OnlinePayment::where('payment_type', 'store_subscription')
@@ -860,8 +860,10 @@ class ReportController extends Controller
             if ($paymentStatus && $paymentStatus !== 'all') {
                 if ($paymentStatus === 'pending') {
                     $query->where(function ($q) {
-                        $q->where('status', 'pending')->orWhereNull('status');
+                        $q->whereIn('status', ['initiated', 'pending'])->orWhereNull('status');
                     });
+                } elseif ($paymentStatus === 'completed') {
+                    $query->whereIn('status', ['success', 'completed']);
                 } else {
                     $query->where('status', $paymentStatus);
                 }
@@ -977,9 +979,31 @@ class ReportController extends Controller
     public function verifySubscriptionPayment(Request $request, $paymentId)
     {
         try {
+            $user = $request->attributes->get('api_user');
+            if (!in_array('admin', [strtolower((string) ($user?->user_type ?? '')), strtolower((string) ($user?->role ?? ''))], true)) {
+                return $this->failed('Admin access required', null, 403);
+            }
+
             $payment = OnlinePayment::find($paymentId);
             if (!$payment) {
                 return $this->failed('Online payment record not found', null, 404);
+            }
+
+            if ($payment->payment_type !== 'store_subscription') {
+                return $this->failed('Payment is not a store subscription', null, 422);
+            }
+
+            if ($payment->gateway === 'sslcommerz') {
+                if ($payment->status === 'success') {
+                    return $this->success('Payment already verified');
+                }
+
+                return app(\App\Service\SslCommerzService::class)->reconcile($payment)
+                    ?? $this->failed('SSLCOMMERZ has not confirmed this payment', null, 409);
+            }
+
+            if (in_array($payment->status, ['success', 'completed', 'refunded'], true)) {
+                return $this->failed('Payment has already been processed', null, 409);
             }
 
             $merchantTxnId = $payment->merchant_transaction_id ?: $payment->gateway_transaction_id;

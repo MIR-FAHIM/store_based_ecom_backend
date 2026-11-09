@@ -247,7 +247,7 @@ class SellerMediaMarketplaceController extends Controller
             return $this->failed('Media order not found', null, 404);
         }
 
-        return $this->aamarPayService->initiateMediaResourceOrderPayment($order, $user);
+        return AmarPayService::forCheckout()->initiateMediaResourceOrderPayment($order, $user);
     }
 
     public function orders(Request $request, int $storeId)

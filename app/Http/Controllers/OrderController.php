@@ -776,27 +776,43 @@ class OrderController extends Controller
 
             if ($validated['status'] === 'completed') {
                 // Also update all order items to completed
-                $order->payment_status = 'paid';
-                if (empty($order->payment_method)) {
-                    $order->payment_method = 'cash';
-                }
-                if ($order->payment_method === 'cash') {
-                    $order->paid_amount = round((float) $order->total, 2);
-                    $order->due_amount = 0;
-                }
-                $order->save();
+                DB::transaction(function () use ($order) {
+                    $lockedOrder = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+                    if ($lockedOrder->payment_status === 'paid' || $lockedOrder->platform === 'pos'
+                        || $lockedOrder->order_type === 'pos'
+                        || !in_array($lockedOrder->payment_method, [null, '', 'cash'], true)) {
+                        return;
+                    }
+
+                    $onlineAttempt = \App\Models\OnlinePayment::where('payment_type', 'order')
+                        ->whereIn('status', ['initiated', 'pending'])
+                        ->where(fn ($query) => $query->where('order_id', $lockedOrder->id)
+                            ->orWhereJsonContains('order_ids', (int) $lockedOrder->id))
+                        ->exists();
+                    if ($onlineAttempt) {
+                        return;
+                    }
+
+                    $lockedOrder->update([
+                        'payment_status' => 'paid',
+                        'payment_method' => 'cash',
+                        'paid_amount' => $lockedOrder->total,
+                        'due_amount' => 0,
+                    ]);
+                    Transaction::firstOrCreate([
+                        'source' => 'cod',
+                        'order_id' => $lockedOrder->id,
+                        'type' => 'order_payment',
+                    ], [
+                        'amount' => $lockedOrder->total,
+                        'trx_type' => 'credit',
+                        'status' => 'completed',
+                        'note' => 'Payment received for order #' . $lockedOrder->order_number,
+                    ]);
+                });
+                $order->refresh();
                 OrderItem::where('order_id', $order->id)
                     ->update(['status' => 'completed']);
-
-                Transaction::create([
-                    'amount' => $order->total,
-                    'trx_type' => 'credit',
-                    'status' => 'completed',
-                    'source' => 'cod',
-                    'order_id' => $order->id,
-                    'type' => 'order_payment',
-                    'note' => 'Payment received for order #' . $order->order_number,
-                ]);
 
                 // Reward Race System Integration
                 app(\App\Service\RewardRaceService::class)->processOrderPoints($order);

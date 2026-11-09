@@ -17,6 +17,27 @@ use Illuminate\Support\Collection;
 
 class AmarPayService
 {
+    protected const GATEWAY = 'aamarpay';
+
+    public static function forCheckout(): self
+    {
+        return app(config('services.payment_gateway') === 'sslcommerz' ? SslCommerzService::class : self::class);
+    }
+
+    protected function transactionId(string $legacyId): string
+    {
+        return $legacyId;
+    }
+
+    protected function createGatewaySession(array $payload): \Illuminate\Http\Client\Response
+    {
+        return Http::timeout(20)->asJson()->post($this->paymentUrl(), $payload);
+    }
+
+    protected function sessionResult(\Illuminate\Http\Client\Response $response): mixed
+    {
+        return $response->json() ?? [];
+    }
     private const PAYMENT_TYPE_ORDER = 'order';
     private const PAYMENT_TYPE_STORE_SUBSCRIPTION = 'store_subscription';
     private const PAYMENT_TYPE_MEDIA_RESOURCE_ORDER = 'media_resource_order';
@@ -82,7 +103,7 @@ class AmarPayService
         $primaryOrder = $unpaidOrders->first();
         $paymentGroupId = $paymentGroupId ?: $primaryOrder->payment_group_id;
         $orderIds = $unpaidOrders->pluck('id')->values()->all();
-        $merchantTransactionId = 'PAY-' . $primaryOrder->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999);
+        $merchantTransactionId = $this->transactionId('PAY-' . $primaryOrder->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999));
 
         $payment = OnlinePayment::create([
             'payment_type' => self::PAYMENT_TYPE_ORDER,
@@ -91,7 +112,7 @@ class AmarPayService
             'order_ids' => $orderIds,
             'store_id' => $store?->id,
             'user_id' => $primaryOrder->user_id,
-            'gateway' => 'aamarpay',
+            'gateway' => static::GATEWAY,
             'merchant_transaction_id' => $merchantTransactionId,
             'amount' => $amount,
             'currency' => 'BDT',
@@ -131,9 +152,7 @@ class AmarPayService
         $payload = array_filter($payload, fn ($value) => $value !== null && $value !== '');
 
         try {
-            $response = Http::timeout(20)
-                ->asJson()
-                ->post($this->paymentUrl(), $payload);
+            $response = $this->createGatewaySession($payload);
         } catch (ConnectionException $e) {
             $payment->update([
                 'status' => 'failed',
@@ -143,7 +162,7 @@ class AmarPayService
             return $this->jsonFailed('Could not connect to AamarPay', null, 502);
         }
 
-        $result = $response->json();
+        $result = $this->sessionResult($response);
         if (!is_array($result)) {
             $result = ['raw_response' => $response->body()];
         }
@@ -201,7 +220,7 @@ class AmarPayService
             return $this->jsonFailed('Payment total must be greater than zero for paid packages', null, 422);
         }
 
-        $merchantTransactionId = 'SUB-' . $store->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999);
+        $merchantTransactionId = $this->transactionId('SUB-' . $store->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999));
 
         $payment = OnlinePayment::create([
             'payment_type' => self::PAYMENT_TYPE_STORE_SUBSCRIPTION,
@@ -211,7 +230,7 @@ class AmarPayService
             'store_subscription_id' => null,
             'store_id' => $store->id,
             'user_id' => $authenticatedUser->id,
-            'gateway' => 'aamarpay',
+            'gateway' => static::GATEWAY,
             'merchant_transaction_id' => $merchantTransactionId,
             'amount' => $amount,
             'currency' => 'BDT',
@@ -258,9 +277,7 @@ class AmarPayService
         $payload = array_filter($payload, fn ($value) => $value !== null && $value !== '');
 
         try {
-            $response = Http::timeout(20)
-                ->asJson()
-                ->post($this->paymentUrl(), $payload);
+            $response = $this->createGatewaySession($payload);
         } catch (ConnectionException $e) {
             $payment->update([
                 'status' => 'failed',
@@ -277,7 +294,7 @@ class AmarPayService
             return $this->jsonFailed('Could not connect to AamarPay', null, 502);
         }
 
-        $result = $response->json();
+        $result = $this->sessionResult($response);
         if (!is_array($result)) {
             $result = ['raw_response' => $response->body()];
         }
@@ -365,7 +382,7 @@ class AmarPayService
             ]);
         }
 
-        $merchantTransactionId = 'SUB-' . $subscription->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999);
+        $merchantTransactionId = $this->transactionId('SUB-' . $subscription->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999));
 
         $payment = OnlinePayment::create([
             'payment_type' => self::PAYMENT_TYPE_STORE_SUBSCRIPTION,
@@ -375,7 +392,7 @@ class AmarPayService
             'store_subscription_id' => $subscription->id,
             'store_id' => $store->id,
             'user_id' => $authenticatedUser->id,
-            'gateway' => 'aamarpay',
+            'gateway' => static::GATEWAY,
             'merchant_transaction_id' => $merchantTransactionId,
             'amount' => $amount,
             'currency' => $subscription->currency ?: 'BDT',
@@ -415,9 +432,7 @@ class AmarPayService
         $payload = array_filter($payload, fn ($value) => $value !== null && $value !== '');
 
         try {
-            $response = Http::timeout(20)
-                ->asJson()
-                ->post($this->paymentUrl(), $payload);
+            $response = $this->createGatewaySession($payload);
         } catch (ConnectionException $e) {
             $payment->update([
                 'status' => 'failed',
@@ -427,7 +442,7 @@ class AmarPayService
             return $this->jsonFailed('Could not connect to AamarPay', null, 502);
         }
 
-        $result = $response->json();
+        $result = $this->sessionResult($response);
         if (!is_array($result)) {
             $result = ['raw_response' => $response->body()];
         }
@@ -501,7 +516,7 @@ class AmarPayService
             ]);
         }
 
-        $merchantTransactionId = 'MEDIA-' . $mediaOrder->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999);
+        $merchantTransactionId = $this->transactionId('MEDIA-' . $mediaOrder->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999));
 
         $payment = OnlinePayment::create([
             'payment_type' => self::PAYMENT_TYPE_MEDIA_RESOURCE_ORDER,
@@ -512,7 +527,7 @@ class AmarPayService
             'media_resource_order_id' => $mediaOrder->id,
             'store_id' => $mediaOrder->store_id,
             'user_id' => $authenticatedUser->id,
-            'gateway' => 'aamarpay',
+            'gateway' => static::GATEWAY,
             'merchant_transaction_id' => $merchantTransactionId,
             'amount' => $amount,
             'currency' => $mediaOrder->currency ?: 'BDT',
@@ -552,9 +567,7 @@ class AmarPayService
         $payload = array_filter($payload, fn ($value) => $value !== null && $value !== '');
 
         try {
-            $response = Http::timeout(20)
-                ->asJson()
-                ->post($this->paymentUrl(), $payload);
+            $response = $this->createGatewaySession($payload);
         } catch (ConnectionException $e) {
             $payment->update([
                 'status' => 'failed',
@@ -564,7 +577,7 @@ class AmarPayService
             return $this->jsonFailed('Could not connect to AamarPay', null, 502);
         }
 
-        $result = $response->json();
+        $result = $this->sessionResult($response);
         if (!is_array($result)) {
             $result = ['raw_response' => $response->body()];
         }
@@ -594,7 +607,7 @@ class AmarPayService
         ], 201);
     }
 
-    public function success(array $data): JsonResponse
+    public function success(array $data, ?int $reviewedBy = null): JsonResponse
     {
         $payment = $this->findPaymentFromCallback($data);
         if (!$payment) {
@@ -603,19 +616,35 @@ class AmarPayService
 
         $validation = $this->validateGatewayPayment($data, $payment);
         if (!$validation['valid']) {
-            $payment->update([
-                'gateway_response' => $this->appendCallbackData($payment, $data, $validation),
-            ]);
-
-            return $this->jsonFailed('Payment could not be verified with AamarPay', $validation, 422);
+            return $this->jsonFailed('Payment could not be verified', null, ($validation['unavailable'] ?? false) ? 503 : 422);
         }
 
-        $payment = DB::transaction(function () use ($payment, $data, $validation) {
+        if (static::GATEWAY === 'sslcommerz') {
+            $data = $validation['callback'];
+        }
+
+        $payment = DB::transaction(function () use ($payment, $data, $validation, $reviewedBy) {
             $lockedPayment = OnlinePayment::whereKey($payment->id)->lockForUpdate()->first();
+            if (in_array($lockedPayment->status, ['success', 'refunded', 'completed'], true)) {
+                return $lockedPayment;
+            }
+
+            $reviewReason = data_get($lockedPayment->gateway_response, 'review_reason');
+            $approvedRisk = $reviewedBy !== null && $reviewReason === 'risk_review';
+            if (!$approvedRisk && (($validation['risk_level'] ?? 0) === 1 || $reviewReason)) {
+                return $this->holdPayment($lockedPayment, $data, $validation, 'risk_review');
+            }
+            if ($approvedRisk) {
+                $validation['reviewed_by'] = $reviewedBy;
+                $validation['reviewed_at'] = now()->toIso8601String();
+            }
 
             if ($lockedPayment->status !== 'success' && $lockedPayment->payment_type === self::PAYMENT_TYPE_ORDER) {
                 $orderIds = $this->orderIdsForPayment($lockedPayment);
-                $orders = Order::whereIn('id', $orderIds)->lockForUpdate()->get();
+                $orders = Order::whereIn('id', $orderIds)->orderBy('id')->lockForUpdate()->get();
+                if ($orders->count() !== count($orderIds) || $orders->contains(fn (Order $order) => $order->payment_status === 'paid')) {
+                    return $this->holdPayment($lockedPayment, $data, $validation, 'order_already_paid_or_missing');
+                }
                 $gatewayTransactionId = $data['pg_txnid'] ?? $lockedPayment->gateway_transaction_id;
 
                 $lockedPayment->update([
@@ -629,7 +658,7 @@ class AmarPayService
                 foreach ($orders as $order) {
                     $order->forceFill([
                         'payment_status' => 'paid',
-                        'payment_method' => 'aamarpay',
+                        'payment_method' => $lockedPayment->gateway,
                         'paid_amount' => round((float) $order->total, 2),
                         'due_amount' => 0,
                     ])->save();
@@ -651,6 +680,17 @@ class AmarPayService
                     );
                 }
             } elseif ($lockedPayment->status !== 'success' && $lockedPayment->payment_type === self::PAYMENT_TYPE_STORE_SUBSCRIPTION) {
+                Shops::whereKey($lockedPayment->store_id)->lockForUpdate()->first();
+                if (static::GATEWAY === 'sslcommerz' && StoreSubscription::where('store_id', $lockedPayment->store_id)
+                    ->where('payment_status', 'paid')
+                    ->where('created_at', '>=', $lockedPayment->initiated_at)
+                    ->exists()) {
+                    return $this->holdPayment($lockedPayment, $data, $validation, 'subscription_already_settled');
+                }
+                if (static::GATEWAY === 'sslcommerz' && !$lockedPayment->store_subscription_id &&
+                    !\App\Models\SubscriptionPackage::find(data_get($lockedPayment->gateway_response, 'subscription_data.subscription_package_id'))) {
+                    return $this->holdPayment($lockedPayment, $data, $validation, 'subscription_package_missing');
+                }
                 $gatewayTransactionId = $data['pg_txnid'] ?? $lockedPayment->gateway_transaction_id;
                 $merchantTxnId = $lockedPayment->merchant_transaction_id ?: ($data['mer_txnid'] ?? null);
 
@@ -693,7 +733,7 @@ class AmarPayService
                                 'starts_at' => $startsAt,
                                 'ends_at' => $this->calculateEndsAt($startsAt, $billingCycle),
                                 'trial_ends_at' => $package->trial_days ? $startsAt->copy()->addDays((int) $package->trial_days) : null,
-                                'price' => $package->price,
+                                'price' => $lockedPayment->amount,
                                 'currency' => 'BDT',
                                 'billing_cycle' => $billingCycle,
                                 'payment_status' => 'paid',
@@ -727,6 +767,10 @@ class AmarPayService
                     ->lockForUpdate()
                     ->first();
 
+                if (!$mediaOrder || $mediaOrder->payment_status === 'paid') {
+                    return $this->holdPayment($lockedPayment, $data, $validation, 'media_order_already_paid_or_missing');
+                }
+
                 $lockedPayment->update([
                     'status' => 'success',
                     'gateway_transaction_id' => $gatewayTransactionId,
@@ -751,6 +795,10 @@ class AmarPayService
 
             return $freshPayment;
         });
+
+        if (data_get($payment->gateway_response, 'review_reason') && $payment->status === 'pending') {
+            return $this->jsonFailed('Payment held for review', ['payment_id' => $payment->id], 409);
+        }
 
         return $this->jsonSuccess('Payment verified successfully', [
             'payment' => $payment,
@@ -901,19 +949,20 @@ class AmarPayService
         return [(int) $payment->order_id];
     }
 
-    private function findPaymentFromCallback(array $data): ?OnlinePayment
+    protected function findPaymentFromCallback(array $data): ?OnlinePayment
     {
         $merchantTransactionId = $data['mer_txnid'] ?? $data['tran_id'] ?? null;
-        if (!$merchantTransactionId) {
+        if (!is_string($merchantTransactionId) || $merchantTransactionId === '') {
             return null;
         }
 
         return OnlinePayment::with('order')
+            ->where('gateway', static::GATEWAY)
             ->where('merchant_transaction_id', $merchantTransactionId)
             ->first();
     }
 
-    private function validateGatewayPayment(array $data, OnlinePayment $payment): array
+    protected function validateGatewayPayment(array $data, OnlinePayment $payment): array
     {
         // AamarPay Search Transaction API expects the merchant transaction id.
         $requestId = $payment->merchant_transaction_id;
@@ -967,6 +1016,17 @@ class AmarPayService
         ]);
     }
 
+    private function holdPayment(OnlinePayment $payment, array $callback, array $validation, string $reason): OnlinePayment
+    {
+        $metadata = $this->appendCallbackData($payment, $callback, $validation);
+        if ($reason !== 'risk_review' || !isset($metadata['review_reason'])) {
+            $metadata['review_reason'] = $reason;
+        }
+        $payment->update(['status' => 'pending', 'gateway_response' => $metadata]);
+
+        return $payment;
+    }
+
     private function safePayloadForLogs(array $payload): array
     {
         $safePayload = $payload;
@@ -980,7 +1040,7 @@ class AmarPayService
         return in_array($result['result'] ?? null, [true, 'true', 'TRUE', 1, '1'], true);
     }
 
-    private function validateConfig(): ?string
+    protected function validateConfig(): ?string
     {
         if (!config('services.aamarpay.base_url')) {
             return 'AamarPay base URL is not configured';
@@ -1004,7 +1064,7 @@ class AmarPayService
             ?: rtrim(config('services.aamarpay.base_url'), '/') . '/api/v1/trxcheck/request.php';
     }
 
-    private function callbackUrl(string $type): string
+    protected function callbackUrl(string $type): string
     {
         return config("services.aamarpay.{$type}_url")
             ?: url("/api/payments/aamarpay/{$type}");

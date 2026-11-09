@@ -40,6 +40,15 @@ return [
         'api_key' => env('MUTHOBARTA_API_KEY','Token e76076c94b87ad21028fd2c13f931f727c6e5e24' ),
     ],
 
+    'payment_gateway' => env('PAYMENT_GATEWAY', 'aamarpay'),
+
+    'sslcommerz' => [
+        'sandbox' => env('SSLCOMMERZ_SANDBOX', true),
+        'store_id' => env('SSLCOMMERZ_STORE_ID'),
+        'store_password' => env('SSLCOMMERZ_STORE_PASSWORD'),
+        'callback_base_url' => env('SSLCOMMERZ_CALLBACK_BASE_URL'),
+    ],
+
     'aamarpay' => [
 
     'base_url' => env('AAMARPAY_BASE_URL'),

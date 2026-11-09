@@ -314,7 +314,7 @@ class SubscriptionPackageController extends Controller
             $paymentRequired = (float) $package->price > 0;
 
             if ($paymentRequired) {
-                return $this->amarPayService->initiateSubscriptionPackagePayment(
+                return AmarPayService::forCheckout()->initiateSubscriptionPackagePayment(
                     $store,
                     $package,
                     $billingCycle,

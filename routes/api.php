@@ -506,6 +506,12 @@ Route::prefix('firebase')->group(function () {
 Route::prefix('payments')->group(function () {
     Route::get('/online/list', [OnlinePaymentController::class, 'listOnlinePayments']);
     Route::get('/online/report', [OnlinePaymentController::class, 'onlinePaymentReport']);
+    Route::get('/online/{paymentId}/status', [OnlinePaymentController::class, 'paymentStatus'])->whereNumber('paymentId');
+    Route::post('/online/{paymentId}/approve-risk', [OnlinePaymentController::class, 'approveSslRiskReview'])->whereNumber('paymentId');
+    Route::post('/initiate', [OnlinePaymentController::class, 'initiate']);
+    Route::post('/sslcommerz/ipn', [OnlinePaymentController::class, 'sslIpn'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::post('/sslcommerz/{result}', [OnlinePaymentController::class, 'sslReturn'])
+        ->whereIn('result', ['success', 'fail', 'cancel'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
 
     Route::post('/aamarpay/initiate', [OnlinePaymentController::class, 'initiate']);
     Route::post('/aamarpay/success', [OnlinePaymentController::class, 'success'])->withoutMiddleware([ApiTokenAuth::class, 'token']);

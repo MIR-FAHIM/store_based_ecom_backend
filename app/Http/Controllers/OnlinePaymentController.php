@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Service\AmarPayService;
+use App\Service\SslCommerzService;
 use App\Models\OnlinePayment;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -25,12 +26,112 @@ class OnlinePaymentController extends Controller
 
         $user = $request->attributes->get('api_user');
 
-        return $this->aamarPayService->initiatePayment(
+        return AmarPayService::forCheckout()->initiatePayment(
             isset($validated['order_id']) ? (int) $validated['order_id'] : null,
             $user,
             $validated['payment_group_id'] ?? null,
             $validated['store_slug'] ?? null
         );
+    }
+
+    public function sslIpn(Request $request, SslCommerzService $gateway): JsonResponse
+    {
+        if ($request->input('status') !== 'VALID' && $request->input('status') !== 'VALIDATED') {
+            return $this->responseSuccess('Notification received');
+        }
+
+        $response = $gateway->success($request->only(['tran_id', 'val_id']));
+        if ($response->getStatusCode() === 409) {
+            return $this->responseSuccess('Payment recorded for review');
+        }
+
+        return $response->getStatusCode() === 200
+            ? $this->responseSuccess('Notification processed')
+            : $this->responseFailed('Verification incomplete', null, $response->getStatusCode());
+    }
+
+    public function approveSslRiskReview(Request $request, int $paymentId, SslCommerzService $gateway): JsonResponse
+    {
+        $user = $request->attributes->get('api_user');
+        if (!in_array('admin', [strtolower((string) ($user?->user_type ?? '')), strtolower((string) ($user?->role ?? ''))], true)) {
+            return $this->responseFailed('Admin access required', null, 403);
+        }
+
+        $request->validate(['customer_verified' => ['required', 'accepted']]);
+        $payment = OnlinePayment::where('gateway', 'sslcommerz')->find($paymentId);
+        if (!$payment) {
+            return $this->responseFailed('Payment not found', null, 404);
+        }
+        if ($payment->status !== 'pending' || data_get($payment->gateway_response, 'review_reason') !== 'risk_review') {
+            return $this->responseFailed('Payment is not awaiting customer verification', null, 409);
+        }
+
+        return $gateway->success([
+            'tran_id' => $payment->merchant_transaction_id,
+            'val_id' => data_get($payment->gateway_response, 'callback.val_id'),
+        ], (int) $user->id);
+    }
+
+    public function sslReturn(Request $request, SslCommerzService $gateway, string $result): RedirectResponse
+    {
+        $transactionId = $request->input('tran_id');
+        $payment = is_string($transactionId) && strlen($transactionId) <= 30
+            ? OnlinePayment::where('gateway', 'sslcommerz')->where('merchant_transaction_id', $transactionId)->first()
+            : null;
+
+        if ($payment && $payment->status !== 'success') {
+            if ($result === 'success' && $request->filled('val_id')) {
+                $gateway->success($request->only(['tran_id', 'val_id']));
+            } else {
+                $gateway->reconcile($payment);
+            }
+            $payment->refresh();
+        }
+
+        $status = $payment?->status === 'success' ? 'success' : match ($result) {
+            'cancel' => 'cancelled',
+            'fail' => 'failed',
+            default => 'pending',
+        };
+        $path = match ($status) {
+            'success' => 'payment_success_path',
+            'cancelled' => 'payment_cancelled_path',
+            default => 'payment_failed_path',
+        };
+
+        return redirect()->away($this->frontendPaymentUrl($path, [
+            'status' => $status,
+            'payment_id' => $payment?->id,
+            'payment_type' => $payment?->payment_type,
+            'payment_group_id' => $payment?->payment_group_id,
+            'order_id' => $payment?->order_id,
+            'store_id' => $payment?->store_id,
+            'store_subscription_id' => $payment?->store_subscription_id,
+            'media_resource_order_id' => $payment?->media_resource_order_id,
+            'store_slug' => $payment?->store?->slug,
+            'merchant_transaction_id' => $payment?->merchant_transaction_id,
+            'message' => $status === 'pending' ? 'Payment verification is pending. Check your order before trying again.' : null,
+        ]));
+    }
+
+    public function paymentStatus(Request $request, int $paymentId): JsonResponse
+    {
+        $user = $request->attributes->get('api_user');
+        if (!$user) {
+            return $this->responseFailed('Authentication required', null, 401);
+        }
+
+        $payment = OnlinePayment::where('user_id', $user->id)->find($paymentId);
+        if (!$payment) {
+            return $this->responseFailed('Payment not found', null, 404);
+        }
+
+        return $this->responseSuccess('Payment status fetched', [
+            'payment_id' => $payment->id,
+            'gateway' => $payment->gateway,
+            'status' => $payment->status,
+            'under_review' => $payment->status === 'pending' && (bool) data_get($payment->gateway_response, 'review_reason'),
+        ]);
     }
 
     public function success(Request $request): RedirectResponse
