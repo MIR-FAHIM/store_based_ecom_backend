@@ -38,6 +38,19 @@ class AmarPayService
     {
         return $response->json() ?? [];
     }
+
+    private function checkoutFailure(OnlinePayment $payment, string $legacyMessage, ?array $legacyDetails = null): JsonResponse
+    {
+        if ($payment->gateway === 'sslcommerz') {
+            return $this->jsonFailed(
+                'SSLCOMMERZ could not start checkout. Please try again later.',
+                ['payment_id' => $payment->id],
+                502
+            );
+        }
+
+        return $this->jsonFailed($legacyMessage, $legacyDetails, 502);
+    }
     private const PAYMENT_TYPE_ORDER = 'order';
     private const PAYMENT_TYPE_STORE_SUBSCRIPTION = 'store_subscription';
     private const PAYMENT_TYPE_MEDIA_RESOURCE_ORDER = 'media_resource_order';
@@ -159,7 +172,7 @@ class AmarPayService
                 'gateway_response' => ['error' => $e->getMessage()],
             ]);
 
-            return $this->jsonFailed('Could not connect to AamarPay', null, 502);
+            return $this->checkoutFailure($payment, 'Could not connect to AamarPay');
         }
 
         $result = $this->sessionResult($response);
@@ -177,7 +190,7 @@ class AmarPayService
         if (!$response->successful() || !$this->gatewayAccepted($result) || empty($result['payment_url'])) {
             $payment->update(['status' => 'failed']);
 
-            return $this->jsonFailed('AamarPay rejected the payment request', $result, 502);
+            return $this->checkoutFailure($payment, 'AamarPay rejected the payment request', $result);
         }
 
         $payment->update(['status' => 'pending']);
@@ -291,7 +304,7 @@ class AmarPayService
                 ],
             ]);
 
-            return $this->jsonFailed('Could not connect to AamarPay', null, 502);
+            return $this->checkoutFailure($payment, 'Could not connect to AamarPay');
         }
 
         $result = $this->sessionResult($response);
@@ -314,7 +327,7 @@ class AmarPayService
         if (!$response->successful() || !$this->gatewayAccepted($result) || empty($result['payment_url'])) {
             $payment->update(['status' => 'failed']);
 
-            return $this->jsonFailed('AamarPay rejected the subscription payment request', $result, 502);
+            return $this->checkoutFailure($payment, 'AamarPay rejected the subscription payment request', $result);
         }
 
         $payment->update(['status' => 'pending']);
@@ -439,7 +452,7 @@ class AmarPayService
                 'gateway_response' => ['error' => $e->getMessage()],
             ]);
 
-            return $this->jsonFailed('Could not connect to AamarPay', null, 502);
+            return $this->checkoutFailure($payment, 'Could not connect to AamarPay');
         }
 
         $result = $this->sessionResult($response);
@@ -457,7 +470,7 @@ class AmarPayService
         if (!$response->successful() || !$this->gatewayAccepted($result) || empty($result['payment_url'])) {
             $payment->update(['status' => 'failed']);
 
-            return $this->jsonFailed('AamarPay rejected the subscription payment request', $result, 502);
+            return $this->checkoutFailure($payment, 'AamarPay rejected the subscription payment request', $result);
         }
 
         $payment->update(['status' => 'pending']);
@@ -574,7 +587,7 @@ class AmarPayService
                 'gateway_response' => ['error' => $e->getMessage()],
             ]);
 
-            return $this->jsonFailed('Could not connect to AamarPay', null, 502);
+            return $this->checkoutFailure($payment, 'Could not connect to AamarPay');
         }
 
         $result = $this->sessionResult($response);
@@ -592,7 +605,7 @@ class AmarPayService
         if (!$response->successful() || !$this->gatewayAccepted($result) || empty($result['payment_url'])) {
             $payment->update(['status' => 'failed']);
 
-            return $this->jsonFailed('AamarPay rejected the media order payment request', $result, 502);
+            return $this->checkoutFailure($payment, 'AamarPay rejected the media order payment request', $result);
         }
 
         $payment->update(['status' => 'pending']);

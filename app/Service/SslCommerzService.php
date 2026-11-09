@@ -6,6 +6,7 @@ use App\Models\OnlinePayment;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class SslCommerzService extends AmarPayService
 {
@@ -55,7 +56,7 @@ class SslCommerzService extends AmarPayService
             'cus_name', 'cus_email', 'cus_phone', 'cus_add1', 'cus_city', 'cus_state', 'cus_country',
         ]));
 
-        return Http::asForm()->acceptJson()->connectTimeout(5)->timeout(20)
+        $response = Http::asForm()->acceptJson()->connectTimeout(5)->timeout(20)
             ->post($this->baseUrl() . '/gwprocess/v4/api.php', $this->credentials() + $customer + [
                 'tran_id' => $payload['tran_id'],
                 'total_amount' => $payload['amount'],
@@ -71,13 +72,39 @@ class SslCommerzService extends AmarPayService
                 'product_profile' => 'general',
                 'cus_postcode' => '0000',
             ]);
+
+        if (!$response->successful() || !$this->sessionResult($response)['result']) {
+            $data = $response->json();
+            $status = $data['status'] ?? null;
+            $url = $data['GatewayPageURL'] ?? null;
+            $reason = $data['failedreason'] ?? null;
+            if (is_string($reason)) {
+                $password = (string) config('services.sslcommerz.store_password');
+                if ($password !== '') {
+                    $reason = str_replace([$password, rawurlencode($password)], '[redacted]', $reason);
+                }
+                $reason = preg_replace('~https?://\S+~i', '[url]', $reason);
+                $reason = mb_substr(trim(strip_tags($reason)), 0, 300);
+            }
+
+            Log::warning('SSLCOMMERZ session rejected', [
+                'transaction_id' => $payload['tran_id'],
+                'environment' => config('services.sslcommerz.sandbox') ? 'sandbox' : 'live',
+                'upstream_http_status' => $response->status(),
+                'gateway_status' => is_string($status) && preg_match('/^[A-Z_]{1,32}$/D', $status) ? $status : null,
+                'gateway_reason' => is_string($reason) ? $reason : null,
+                'checkout_host' => is_string($url) ? parse_url($url, PHP_URL_HOST) : null,
+            ]);
+        }
+
+        return $response;
     }
 
     protected function sessionResult(Response $response): array
     {
         $data = $response->json();
         $data = is_array($data) ? $data : [];
-        $url = is_array($data) ? ($data['GatewayPageURL'] ?? null) : null;
+        $url = $data['GatewayPageURL'] ?? null;
         $accepted = is_string($url) && filter_var($url, FILTER_VALIDATE_URL)
             && parse_url($url, PHP_URL_SCHEME) === 'https'
             && parse_url($url, PHP_URL_HOST) === parse_url($this->baseUrl(), PHP_URL_HOST)

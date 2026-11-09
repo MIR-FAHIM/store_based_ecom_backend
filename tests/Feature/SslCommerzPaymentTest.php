@@ -10,6 +10,7 @@ use App\Models\SubscriptionPackage;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -114,6 +115,40 @@ class SslCommerzPaymentTest extends TestCase
             ->assertOk()->assertJsonPath('data.under_review', true);
         $this->assertDatabaseHas('orders', ['id' => $order->id, 'payment_status' => 'unpaid']);
         $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_live_checkout_rejection_logs_safe_details_and_returns_payment_reference(): void
+    {
+        config(['services.sslcommerz.sandbox' => false]);
+        Log::spy();
+        Http::fake([
+            'https://securepay.sslcommerz.com/gwprocess/v4/api.php' => Http::response([
+                'status' => 'FAILED',
+                'failedreason' => 'Invalid credentials: test-password',
+            ]),
+        ]);
+
+        $customer = User::factory()->create(['user_type' => 'customer']);
+        $order = Order::create(['user_id' => $customer->id, 'total' => 499, 'payment_status' => 'unpaid']);
+        $response = $this->withToken($this->token($customer))
+            ->postJson('/api/payments/initiate', ['order_id' => $order->id])
+            ->assertStatus(502)
+            ->assertJsonPath('message', 'SSLCOMMERZ could not start checkout. Please try again later.')
+            ->assertJsonMissingPath('errors.failedreason');
+
+        $this->assertDatabaseHas('online_payments', [
+            'id' => $response->json('errors.payment_id'),
+            'order_id' => $order->id,
+            'gateway' => 'sslcommerz',
+            'status' => 'failed',
+        ]);
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'payment_status' => 'unpaid']);
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn ($message, $context) =>
+            $message === 'SSLCOMMERZ session rejected'
+            && $context['environment'] === 'live'
+            && $context['gateway_status'] === 'FAILED'
+            && $context['gateway_reason'] === 'Invalid credentials: [redacted]'
+        );
     }
 
     public function test_grouped_checkout_credits_each_order_once(): void
