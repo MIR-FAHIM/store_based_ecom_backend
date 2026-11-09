@@ -105,9 +105,13 @@ class SslCommerzService extends AmarPayService
         $data = $response->json();
         $data = is_array($data) ? $data : [];
         $url = $data['GatewayPageURL'] ?? null;
+        $checkoutHosts = config('services.sslcommerz.sandbox')
+            ? ['sandbox.sslcommerz.com']
+            : ['securepay.sslcommerz.com', 'pay.sslcommerz.com'];
+
         $accepted = is_string($url) && filter_var($url, FILTER_VALIDATE_URL)
             && parse_url($url, PHP_URL_SCHEME) === 'https'
-            && parse_url($url, PHP_URL_HOST) === parse_url($this->baseUrl(), PHP_URL_HOST)
+            && in_array(strtolower((string) parse_url($url, PHP_URL_HOST)), $checkoutHosts, true)
             && ($data['status'] ?? null) === 'SUCCESS';
 
         return [

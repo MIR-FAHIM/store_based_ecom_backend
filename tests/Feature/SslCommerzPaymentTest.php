@@ -12,6 +12,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class SslCommerzPaymentTest extends TestCase
@@ -149,6 +150,50 @@ class SslCommerzPaymentTest extends TestCase
             && $context['gateway_status'] === 'FAILED'
             && $context['gateway_reason'] === 'Invalid credentials: [redacted]'
         );
+    }
+
+    #[DataProvider('checkoutHosts')]
+    public function test_checkout_accepts_only_https_hosts_for_the_configured_environment(
+        bool $sandbox,
+        string $url,
+        bool $accepted
+    ): void {
+        config(['services.sslcommerz.sandbox' => $sandbox]);
+        $sessionHost = $sandbox ? 'sandbox.sslcommerz.com' : 'securepay.sslcommerz.com';
+        Http::fake([
+            "https://{$sessionHost}/gwprocess/v4/api.php" => Http::response([
+                'status' => 'SUCCESS',
+                'GatewayPageURL' => $url,
+                'sessionkey' => 'test-session',
+            ]),
+        ]);
+
+        $customer = User::factory()->create(['user_type' => 'customer']);
+        $order = Order::create(['user_id' => $customer->id, 'total' => 11, 'payment_status' => 'unpaid']);
+        $response = $this->withToken($this->token($customer))
+            ->postJson('/api/payments/initiate', ['order_id' => $order->id]);
+
+        if ($accepted) {
+            $response->assertOk()->assertJsonPath('data.payment_url', $url);
+        } else {
+            $response->assertStatus(502)->assertJsonMissingPath('data.payment_url');
+        }
+
+        $this->assertDatabaseHas('online_payments', [
+            'order_id' => $order->id,
+            'status' => $accepted ? 'pending' : 'failed',
+        ]);
+    }
+
+    public static function checkoutHosts(): array
+    {
+        return [
+            'live hosted checkout' => [false, 'https://pay.sslcommerz.com/test-checkout', true],
+            'live API host' => [false, 'https://securepay.sslcommerz.com/test-checkout', true],
+            'live host in sandbox mode' => [true, 'https://pay.sslcommerz.com/test-checkout', false],
+            'lookalike host' => [false, 'https://pay.sslcommerz.com.example.org/test-checkout', false],
+            'insecure live URL' => [false, 'http://pay.sslcommerz.com/test-checkout', false],
+        ];
     }
 
     public function test_grouped_checkout_credits_each_order_once(): void
