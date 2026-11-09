@@ -302,6 +302,7 @@ class SubscriptionPackageController extends Controller
             $validated = $request->validate([
                 'subscription_package_id' => ['required', 'integer', 'exists:subscription_packages,id'],
                 'billing_cycle' => ['nullable', Rule::in(['monthly', 'yearly', 'lifetime'])],
+                'return_to' => ['nullable', Rule::in(['merchant_app'])],
             ]);
 
             $package = SubscriptionPackage::where('status', 'active')->find($validated['subscription_package_id']);
@@ -318,7 +319,8 @@ class SubscriptionPackageController extends Controller
                     $store,
                     $package,
                     $billingCycle,
-                    $request->attributes->get('api_user')
+                    $request->attributes->get('api_user'),
+                    ($validated['return_to'] ?? null) === 'merchant_app'
                 );
             }
 

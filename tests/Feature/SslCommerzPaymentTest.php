@@ -118,6 +118,57 @@ class SslCommerzPaymentTest extends TestCase
         $this->assertDatabaseCount('transactions', 0);
     }
 
+    public function test_merchant_callbacks_return_to_the_app_after_cancel_and_verified_success(): void
+    {
+        $seller = User::factory()->create(['user_type' => 'seller']);
+        $store = Shops::create(['user_id' => $seller->id, 'slug' => 'ssl-merchant-return', 'status' => 'active']);
+        $package = SubscriptionPackage::create([
+            'name' => 'Test package',
+            'slug' => 'ssl-merchant-return',
+            'price' => 250,
+            'billing_cycle' => 'monthly',
+            'status' => 'active',
+        ]);
+        $this->fakeGateway(250);
+        $sellerToken = $this->token($seller);
+        $attempt = $this->withToken($sellerToken)
+            ->postJson("/api/stores/{$store->id}/subscription/subscribe", [
+                'subscription_package_id' => $package->id,
+                'return_to' => 'merchant_app',
+            ])->assertCreated()->assertJsonPath('data.merchant_app_return', true)->json('data');
+
+        $transaction = $attempt['merchant_transaction_id'];
+        $returnUrl = 'https://staging.example.com/api/payments/sslcommerz/merchant-return?payment_id=' . $attempt['payment_id'];
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/gwprocess/v4/api.php')
+            && $request['cancel_url'] === "https://staging.example.com/api/payments/sslcommerz/merchant/cancel/{$transaction}"
+            && $request['success_url'] === "https://staging.example.com/api/payments/sslcommerz/merchant/success/{$transaction}"
+            && $request['fail_url'] === "https://staging.example.com/api/payments/sslcommerz/merchant/fail/{$transaction}"
+            && $request['ipn_url'] === 'https://staging.example.com/api/payments/sslcommerz/ipn');
+
+        $this->flushHeaders();
+        $this->post("/api/payments/sslcommerz/merchant/cancel/{$transaction}")
+            ->assertStatus(303)->assertRedirect($returnUrl . '&status=cancelled');
+        $this->post("/api/payments/sslcommerz/merchant/fail/{$transaction}")
+            ->assertStatus(303)->assertRedirect($returnUrl . '&status=failed');
+        $this->assertDatabaseCount('store_subscriptions', 0);
+
+        $this->post("/api/payments/sslcommerz/merchant/success/{$transaction}", [
+            'tran_id' => $transaction,
+            'val_id' => 'test-validation',
+        ])->assertStatus(303)->assertRedirect($returnUrl . '&status=success');
+        $this->assertDatabaseHas('store_subscriptions', [
+            'store_id' => $store->id,
+            'subscription_package_id' => $package->id,
+            'payment_status' => 'paid',
+        ]);
+
+        $this->post("/api/payments/sslcommerz/merchant/cancel/{$transaction}")
+            ->assertStatus(303)->assertRedirect($returnUrl . '&status=success');
+        $this->get('/api/payments/sslcommerz/merchant-return')->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        $this->withToken($sellerToken)->getJson('/api/payments/online/' . $attempt['payment_id'] . '/status')
+            ->assertOk()->assertJsonPath('data.status', 'success');
+    }
+
     public function test_live_checkout_rejection_logs_safe_details_and_returns_payment_reference(): void
     {
         config(['services.sslcommerz.sandbox' => false]);
@@ -251,6 +302,10 @@ class SslCommerzPaymentTest extends TestCase
                 'status' => 'SUCCESS',
                 'GatewayPageURL' => 'https://sandbox.sslcommerz.com/test-checkout',
                 'sessionkey' => 'test-session',
+            ]),
+            'https://sandbox.sslcommerz.com/validator/api/merchantTransIDvalidationAPI.php*' => Http::response([
+                'APIConnect' => 'DONE',
+                'element' => [],
             ]),
             'https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php*' => fn () => Http::response([
                 'status' => 'VALIDATED',

@@ -50,20 +50,30 @@ class SslCommerzService extends AmarPayService
         return rtrim($base, '/') . '/api/payments/sslcommerz/' . $type;
     }
 
+    public function merchantReturnUrl(): string
+    {
+        return $this->callbackUrl('merchant-return');
+    }
+
     protected function createGatewaySession(array $payload): Response
     {
         $customer = array_intersect_key($payload, array_flip([
             'cus_name', 'cus_email', 'cus_phone', 'cus_add1', 'cus_city', 'cus_state', 'cus_country',
         ]));
+        $callback = fn (string $result) => $this->callbackUrl(
+            ($payload['return_to'] ?? null) === 'merchant_app'
+                ? "merchant/{$result}/{$payload['tran_id']}"
+                : $result
+        );
 
         $response = Http::asForm()->acceptJson()->connectTimeout(5)->timeout(20)
             ->post($this->baseUrl() . '/gwprocess/v4/api.php', $this->credentials() + $customer + [
                 'tran_id' => $payload['tran_id'],
                 'total_amount' => $payload['amount'],
                 'currency' => $payload['currency'],
-                'success_url' => $this->callbackUrl('success'),
-                'fail_url' => $this->callbackUrl('fail'),
-                'cancel_url' => $this->callbackUrl('cancel'),
+                'success_url' => $callback('success'),
+                'fail_url' => $callback('fail'),
+                'cancel_url' => $callback('cancel'),
                 'ipn_url' => $this->callbackUrl('ipn'),
                 'shipping_method' => 'NO',
                 'num_of_item' => 1,

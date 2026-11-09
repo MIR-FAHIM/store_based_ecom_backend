@@ -510,6 +510,11 @@ Route::prefix('payments')->group(function () {
     Route::post('/online/{paymentId}/approve-risk', [OnlinePaymentController::class, 'approveSslRiskReview'])->whereNumber('paymentId');
     Route::post('/initiate', [OnlinePaymentController::class, 'initiate']);
     Route::post('/sslcommerz/ipn', [OnlinePaymentController::class, 'sslIpn'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::get('/sslcommerz/merchant-return', [OnlinePaymentController::class, 'sslMerchantReturn'])
+        ->withoutMiddleware([ApiTokenAuth::class, 'token']);
+    Route::match(['get', 'post'], '/sslcommerz/merchant/{result}/{merchantTransactionId}', [OnlinePaymentController::class, 'sslReturn'])
+        ->whereIn('result', ['success', 'fail', 'cancel'])->where('merchantTransactionId', 'SSL-[a-f0-9]{24}')
+        ->withoutMiddleware([ApiTokenAuth::class, 'token']);
     Route::post('/sslcommerz/{result}', [OnlinePaymentController::class, 'sslReturn'])
         ->whereIn('result', ['success', 'fail', 'cancel'])->withoutMiddleware([ApiTokenAuth::class, 'token']);
 

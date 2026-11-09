@@ -210,7 +210,8 @@ class AmarPayService
         Shops $store,
         \App\Models\SubscriptionPackage $package,
         string $billingCycle,
-        ?User $authenticatedUser = null
+        ?User $authenticatedUser = null,
+        bool $merchantAppReturn = false
     ): JsonResponse {
         $configError = $this->validateConfig();
         if ($configError) {
@@ -234,6 +235,15 @@ class AmarPayService
         }
 
         $merchantTransactionId = $this->transactionId('SUB-' . $store->id . '-' . now()->format('ymdHis') . '-' . random_int(1000, 9999));
+        $merchantAppReturn = $merchantAppReturn && static::GATEWAY === 'sslcommerz';
+        $subscriptionData = [
+            'subscription_package_id' => (int) $package->id,
+            'billing_cycle' => $billingCycle,
+            'price' => (float) $package->price,
+        ];
+        if ($merchantAppReturn) {
+            $subscriptionData['return_to'] = 'merchant_app';
+        }
 
         $payment = OnlinePayment::create([
             'payment_type' => self::PAYMENT_TYPE_STORE_SUBSCRIPTION,
@@ -250,11 +260,7 @@ class AmarPayService
             'status' => 'initiated',
             'initiated_at' => now(),
             'gateway_response' => [
-                'subscription_data' => [
-                    'subscription_package_id' => (int) $package->id,
-                    'billing_cycle' => $billingCycle,
-                    'price' => (float) $package->price,
-                ],
+                'subscription_data' => $subscriptionData,
             ],
         ]);
 
@@ -286,6 +292,7 @@ class AmarPayService
             'opt_b' => (string) $package->id,
             'opt_c' => (string) $store->id,
             'type' => 'json',
+            'return_to' => $merchantAppReturn ? 'merchant_app' : null,
         ];
         $payload = array_filter($payload, fn ($value) => $value !== null && $value !== '');
 
@@ -295,11 +302,7 @@ class AmarPayService
             $payment->update([
                 'status' => 'failed',
                 'gateway_response' => [
-                    'subscription_data' => [
-                        'subscription_package_id' => (int) $package->id,
-                        'billing_cycle' => $billingCycle,
-                        'price' => (float) $package->price,
-                    ],
+                    'subscription_data' => $subscriptionData,
                     'error' => $e->getMessage(),
                 ],
             ]);
@@ -314,11 +317,7 @@ class AmarPayService
 
         $payment->update([
             'gateway_response' => [
-                'subscription_data' => [
-                    'subscription_package_id' => (int) $package->id,
-                    'billing_cycle' => $billingCycle,
-                    'price' => (float) $package->price,
-                ],
+                'subscription_data' => $subscriptionData,
                 'request' => $this->safePayloadForLogs($payload),
                 'response' => $result,
             ],
@@ -337,6 +336,7 @@ class AmarPayService
             'store_id' => $store->id,
             'payment_required' => true,
             'payment_id' => $payment->id,
+            'merchant_app_return' => $merchantAppReturn,
             'merchant_transaction_id' => $payment->merchant_transaction_id,
             'amount' => $payment->amount,
             'payment_url' => $result['payment_url'],

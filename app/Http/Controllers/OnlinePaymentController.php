@@ -72,16 +72,28 @@ class OnlinePaymentController extends Controller
         ], (int) $user->id);
     }
 
-    public function sslReturn(Request $request, SslCommerzService $gateway, string $result): RedirectResponse
+    public function sslReturn(
+        Request $request,
+        SslCommerzService $gateway,
+        string $result,
+        ?string $merchantTransactionId = null
+    ): RedirectResponse
     {
-        $transactionId = $request->input('tran_id');
+        $transactionId = $merchantTransactionId ?? $request->input('tran_id');
         $payment = is_string($transactionId) && strlen($transactionId) <= 30
             ? OnlinePayment::where('gateway', 'sslcommerz')->where('merchant_transaction_id', $transactionId)->first()
             : null;
 
+        $merchantAppReturn = $payment?->payment_type === 'store_subscription'
+            && data_get($payment->gateway_response, 'subscription_data.return_to') === 'merchant_app';
+
+        if ($merchantTransactionId !== null && !$merchantAppReturn) {
+            abort(404);
+        }
+
         if ($payment && $payment->status !== 'success') {
             if ($result === 'success' && $request->filled('val_id')) {
-                $gateway->success($request->only(['tran_id', 'val_id']));
+                $gateway->success(['tran_id' => $transactionId, 'val_id' => $request->input('val_id')]);
             } else {
                 $gateway->reconcile($payment);
             }
@@ -93,6 +105,14 @@ class OnlinePaymentController extends Controller
             'fail' => 'failed',
             default => 'pending',
         };
+
+        if ($merchantAppReturn) {
+            return redirect()->away($gateway->merchantReturnUrl() . '?' . http_build_query([
+                'payment_id' => $payment->id,
+                'status' => $status,
+            ]), 303)->header('Cache-Control', 'no-store');
+        }
+
         $path = match ($status) {
             'success' => 'payment_success_path',
             'cancelled' => 'payment_cancelled_path',
@@ -112,6 +132,14 @@ class OnlinePaymentController extends Controller
             'merchant_transaction_id' => $payment?->merchant_transaction_id,
             'message' => $status === 'pending' ? 'Payment verification is pending. Check your order before trying again.' : null,
         ]));
+    }
+
+    public function sslMerchantReturn(): \Illuminate\Http\Response
+    {
+        return response(
+            '<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            . '<title>MyZoo Merchant</title><main><p>Return to the MyZoo Merchant app to check your payment.</p></main></html>'
+        )->header('Content-Type', 'text/html; charset=UTF-8')->header('Cache-Control', 'no-store');
     }
 
     public function paymentStatus(Request $request, int $paymentId): JsonResponse
