@@ -66,22 +66,32 @@ class SslCommerzService extends AmarPayService
                 : $result
         );
 
-        $response = Http::asForm()->acceptJson()->connectTimeout(5)->timeout(20)
-            ->post($this->baseUrl() . '/gwprocess/v4/api.php', $this->credentials() + $customer + [
-                'tran_id' => $payload['tran_id'],
-                'total_amount' => $payload['amount'],
-                'currency' => $payload['currency'],
-                'success_url' => $callback('success'),
-                'fail_url' => $callback('fail'),
-                'cancel_url' => $callback('cancel'),
-                'ipn_url' => $this->callbackUrl('ipn'),
-                'shipping_method' => 'NO',
-                'num_of_item' => 1,
-                'product_name' => substr($payload['desc'], 0, 120),
-                'product_category' => 'MyZoo',
-                'product_profile' => 'general',
-                'cus_postcode' => '0000',
+        try {
+            $response = Http::asForm()->acceptJson()->connectTimeout(12)->timeout(25)
+                ->post($this->baseUrl() . '/gwprocess/v4/api.php', $this->credentials() + $customer + [
+                    'tran_id' => $payload['tran_id'],
+                    'total_amount' => $payload['amount'],
+                    'currency' => $payload['currency'],
+                    'success_url' => $callback('success'),
+                    'fail_url' => $callback('fail'),
+                    'cancel_url' => $callback('cancel'),
+                    'ipn_url' => $this->callbackUrl('ipn'),
+                    'shipping_method' => 'NO',
+                    'num_of_item' => 1,
+                    'product_name' => substr($payload['desc'], 0, 120),
+                    'product_category' => 'MyZoo',
+                    'product_profile' => 'general',
+                    'cus_postcode' => '0000',
+                ]);
+        } catch (ConnectionException $exception) {
+            Log::warning('SSLCOMMERZ session connection failed', [
+                'transaction_id' => $payload['tran_id'],
+                'environment' => config('services.sslcommerz.sandbox') ? 'sandbox' : 'live',
+                'error' => mb_substr($exception->getMessage(), 0, 300),
             ]);
+
+            throw $exception;
+        }
 
         if (!$response->successful() || !$this->sessionResult($response)['result']) {
             $data = $response->json();

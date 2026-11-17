@@ -71,6 +71,12 @@ class WebsiteSettingController extends Controller
                 'short_details' => ['nullable', 'string'],
                 'photo_id' => ['nullable', 'integer', 'exists:uploads,id'],
                 'type' => ['nullable', 'string', 'max:50'],
+                'company_name' => ['nullable', 'string', 'max:255'],
+                'management_details' => ['nullable', 'string'],
+                'registered_address' => ['nullable', 'string'],
+                'trade_license_number' => ['nullable', 'string', 'max:100'],
+                'company_phone' => ['nullable', 'string', 'max:50'],
+                'company_email' => ['nullable', 'email', 'max:255'],
             ]);
 
             $setting = WebsiteSetting::first();

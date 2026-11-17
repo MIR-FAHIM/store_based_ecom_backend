@@ -18,6 +18,12 @@ class WebsiteSetting extends Model
         'short_details',
         'photo_id',
         'type',
+        'company_name',
+        'management_details',
+        'registered_address',
+        'trade_license_number',
+        'company_phone',
+        'company_email',
     ];
 
     protected $casts = [
