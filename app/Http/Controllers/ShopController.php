@@ -6,7 +6,10 @@ use App\Models\Product;
 use App\Models\Shops;
 use App\Models\User;
 use App\Models\StoreProduct;
+use App\Models\Upload;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class ShopController extends Controller
@@ -43,6 +46,34 @@ class ShopController extends Controller
         } while (Shops::where('code', $code)->exists());
 
         return $code;
+    }
+
+    private function saveShopImageUpload(Request $request, Shops $shop, string $field): ?int
+    {
+        if (!$request->hasFile($field)) {
+            return null;
+        }
+
+        $file = $request->file($field);
+        $extension = strtolower($file->guessExtension() ?: $file->getClientOriginalExtension() ?: 'jpg');
+        $filename = now()->format('YmdHis') . '_' . Str::random(12) . '.' . $extension;
+        $path = "shops/{$shop->id}/{$filename}";
+
+        Storage::disk('public')->putFileAs("shops/{$shop->id}", $file, $filename);
+
+        $user = $request->attributes->get('api_user');
+        $upload = Upload::create([
+            'file_original_name' => $file->getClientOriginalName(),
+            'file_name' => $path,
+            'user_id' => $user?->id,
+            'seller_id' => $shop->user_id,
+            'file_size' => $file->getSize(),
+            'extension' => $extension,
+            'type' => $file->getClientMimeType(),
+            'external_link' => null,
+        ]);
+
+        return (int) $upload->id;
     }
 
     /**
@@ -398,8 +429,12 @@ class ShopController extends Controller
                 'code' => ['nullable', 'string', 'regex:/^\\d{6}$/', Rule::unique('shops', 'code')->ignore($shop->id)],
                 'description' => ['nullable', 'string'],
 
-                'logo' => ['nullable', 'string', 'max:255'],
-                'banner' => ['nullable', 'string', 'max:255'],
+                'logo' => $request->hasFile('logo')
+                    ? ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120']
+                    : ['nullable', 'string', 'max:255'],
+                'banner' => $request->hasFile('banner')
+                    ? ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120']
+                    : ['nullable', 'string', 'max:255'],
 
                 'phone' => ['nullable', 'string', 'max:50'],
                 'email' => ['nullable', 'email', 'max:255'],
@@ -441,6 +476,12 @@ class ShopController extends Controller
 
                 if ($anotherShopExists) {
                     return $this->failed('This user already has another shop', null, 409);
+                }
+            }
+
+            foreach (['logo', 'banner'] as $imageField) {
+                if ($request->hasFile($imageField)) {
+                    $validated[$imageField] = $this->saveShopImageUpload($request, $shop, $imageField);
                 }
             }
 
