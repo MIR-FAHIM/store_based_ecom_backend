@@ -420,6 +420,20 @@ class ShopController extends Controller
                 return $this->failed('Shop not found', null, 404);
             }
 
+            $validateShopImageValue = static function (string $attribute, mixed $value, \Closure $fail): void {
+                if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+                    if (!Upload::whereKey((int) $value)->exists()) {
+                        $fail("The {$attribute} must reference an existing upload.");
+                    }
+
+                    return;
+                }
+
+                if (!is_string($value) || mb_strlen($value) > 255) {
+                    $fail("The {$attribute} must be an upload ID or a string no longer than 255 characters.");
+                }
+            };
+
             $validated = $request->validate([
                 'user_id' => ['nullable', 'integer', 'exists:users,id'],
 
@@ -431,10 +445,10 @@ class ShopController extends Controller
 
                 'logo' => $request->hasFile('logo')
                     ? ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120']
-                    : ['nullable', 'string', 'max:255'],
+                    : ['nullable', $validateShopImageValue],
                 'banner' => $request->hasFile('banner')
                     ? ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120']
-                    : ['nullable', 'string', 'max:255'],
+                    : ['nullable', $validateShopImageValue],
 
                 'phone' => ['nullable', 'string', 'max:50'],
                 'email' => ['nullable', 'email', 'max:255'],
